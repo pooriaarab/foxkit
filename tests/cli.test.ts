@@ -58,6 +58,12 @@ describe("refuses bad input and writes nothing", () => {
   }
 });
 
+it("C6 names an unknown short flag", async () => {
+  expect(await cli(...ok, "-p")).toBe(2);
+  expect(err[0]).toBe("Unknown option -p.");
+  expect(readdirSync(cwd)).toEqual([]);
+});
+
 describe("the target path", () => {
   it("C8 refuses a directory with files and leaves them alone", async () => {
     mkdirSync(join(cwd, "demo"));
