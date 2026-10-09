@@ -1,0 +1,134 @@
+{
+  "startedAt": "2026-10-09T03:00:37.194Z",
+  "node": "v25.9.0",
+  "steps": [
+    {
+      "name": "scaffold a plain repo",
+      "command": "node <foxkit>/dist/cli.js plain-demo --prefix pln --description A plain demo repo.",
+      "cwd": ".",
+      "exitCode": 0,
+      "expectedExit": 0,
+      "ok": true,
+      "ms": 156
+    },
+    {
+      "name": "plain repo has no placeholder or marker",
+      "ok": true,
+      "detail": []
+    },
+    {
+      "name": "plain repo has no extension fixture",
+      "ok": true
+    },
+    {
+      "name": "pnpm install (plain)",
+      "command": "pnpm install --no-frozen-lockfile",
+      "cwd": "plain-demo",
+      "exitCode": 0,
+      "expectedExit": 0,
+      "ok": true,
+      "ms": 1159
+    },
+    {
+      "name": "pnpm ci:local (plain)",
+      "command": "pnpm ci:local",
+      "cwd": "plain-demo",
+      "exitCode": 0,
+      "expectedExit": 0,
+      "ok": true,
+      "ms": 4552
+    },
+    {
+      "name": "scaffold a repo with --extension",
+      "command": "node <foxkit>/dist/cli.js ext-demo --prefix ext --description An extension demo repo. --extension --foxkit file:<foxkit>/",
+      "cwd": ".",
+      "exitCode": 0,
+      "expectedExit": 0,
+      "ok": true,
+      "ms": 166
+    },
+    {
+      "name": "extension repo has no placeholder or marker",
+      "ok": true,
+      "detail": []
+    },
+    {
+      "name": "pnpm install (extension)",
+      "command": "pnpm install --no-frozen-lockfile",
+      "cwd": "ext-demo",
+      "exitCode": 0,
+      "expectedExit": 0,
+      "ok": true,
+      "ms": 2355
+    },
+    {
+      "name": "pnpm ci:local (extension)",
+      "command": "pnpm ci:local",
+      "cwd": "ext-demo",
+      "exitCode": 0,
+      "expectedExit": 0,
+      "ok": true,
+      "ms": 4320
+    },
+    {
+      "name": "pnpm e2e (extension, real Firefox)",
+      "command": "pnpm e2e",
+      "cwd": "ext-demo",
+      "exitCode": 0,
+      "expectedExit": 0,
+      "ok": true,
+      "ms": 3279
+    },
+    {
+      "name": "extension repo artifact says passed",
+      "ok": true,
+      "detail": [
+        "content script ran in the page: content-script-ran",
+        "background stored a value: installed"
+      ]
+    },
+    {
+      "name": "harness reads the fixture's moz-extension page",
+      "ok": true,
+      "detail": "installed"
+    },
+    {
+      "name": "close() deleted the profile, and a second close() did not throw",
+      "ok": true,
+      "detail": "foxkit-profile-mJFfta"
+    },
+    {
+      "name": "refuse a directory that is not empty",
+      "command": "node <foxkit>/dist/cli.js plain-demo --prefix pln --description Again.",
+      "cwd": ".",
+      "exitCode": 2,
+      "expectedExit": 2,
+      "ok": true,
+      "ms": 100
+    }
+  ],
+  "pnpm": "11.10.0",
+  "gitSha": "895b3f86bb0c2390d9077836bd2ea48ee29c198e",
+  "extensionRepoArtifact": {
+    "startedAt": "2026-10-09T03:00:51.280Z",
+    "checks": [
+      {
+        "name": "content script ran in the page",
+        "expected": "content-script-ran",
+        "actual": "content-script-ran",
+        "ok": true
+      },
+      {
+        "name": "background stored a value",
+        "expected": "installed",
+        "actual": "installed",
+        "ok": true
+      }
+    ],
+    "firefox": "firefox/157.0.1",
+    "passed": true
+  },
+  "firefox": "firefox/157.0.1",
+  "passed": true,
+  "finishedAt": "2026-10-09T03:00:57.031Z"
+}
