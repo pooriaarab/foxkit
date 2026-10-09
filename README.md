@@ -28,14 +28,14 @@ pnpm ci:local
 pnpm e2e
 ```
 
-`pnpm e2e` runs `e2e/run.mjs`. This is the core of it, and it runs as written
-in a repo made with `--extension`:
+`pnpm e2e` builds `dist-ext/` and runs `e2e/run.mjs`. This is the core of it.
+It runs as written in a repo made with `--extension`, after `pnpm build:ext`:
 
 ```js
 import { launch, poll, serve, writeArtifact } from "create-foxkit/e2e";
 
 const site = await serve("e2e/site");
-const fox = await launch({ extension: "extension" });
+const fox = await launch({ extension: "dist-ext" });
 try {
   const page = await fox.open(`${site.url}/index.html`);
   const value = await poll(page, () => document.documentElement.dataset.fixture);
@@ -66,9 +66,13 @@ With `--extension`, the repo also gets these:
 
 | Path | What it does |
 |---|---|
-| `extension/` | A Manifest V3 extension for Firefox. Its background script stores a value. Its content script marks each page on `127.0.0.1`. |
-| `e2e/run.mjs`, `e2e/site/` | The E2E test. It checks both values and writes `artifacts/e2e-<date>.json`. |
-| `e2e` script, `create-foxkit` dev dependency | `pnpm e2e` runs the test. |
+| `extension/` | The demo extension: a Manifest V3 extension for Firefox with an `action` popup that the repo fills in to show its primitive. The gecko ID is `<name>@<owner>`, `strict_min_version` is `153.0`, and it declares `data_collection_permissions`. Its background script stores a value. Its content script marks each page on `127.0.0.1`. |
+| `scripts/build-ext.mjs` | Bundles `extension/` into `dist-ext/` with esbuild. It stops when the manifest version is not the `package.json` version. |
+| `build:ext`, `lint:ext` scripts | `pnpm ci:local` also builds `dist-ext/` and runs `web-ext lint --warnings-as-errors` on it. |
+| `e2e/run.mjs`, `e2e/site/` | The E2E test. It installs `dist-ext/`, checks both values and writes `artifacts/e2e-<date>.json`. |
+| `e2e` script, `create-foxkit` dev dependency | `pnpm e2e` builds the extension and runs the test. |
+| Signing steps in `release.yml` | After the npm publish, `web-ext sign --channel=unlisted` signs `dist-ext/` with the `AMO_JWT_ISSUER` and `AMO_JWT_SECRET` secrets and uploads the `git archive` source for AMO review. The signed `.xpi` goes on the GitHub release. An empty secret stops the job with a clear error. |
+| `pnpm-workspace.yaml` | Allows the esbuild build script, which pnpm 11 blocks by default. |
 | An `e2e` job in `ci.yml` | Installs Firefox with `browser-actions/setup-firefox` and runs `pnpm e2e`. |
 
 All GitHub Actions are pinned to commit SHAs.
@@ -77,7 +81,7 @@ All GitHub Actions are pinned to commit SHAs.
 
 | Who | What they build | How foxkit helps |
 |---|---|---|
-| A developer who starts a Firefox extension | An MV3 extension with tests from day one | `--extension` gives a working fixture and a Firefox E2E test that also runs in CI. |
+| A developer who starts a Firefox extension | An MV3 extension with tests from day one | `--extension` gives a demo extension, a Firefox E2E test that also runs in CI, and AMO signing on release. |
 | The fox primitives maintainers | foxmind, foxpaw, foxgate and the other fox repos | Each repo starts with the same CI, release workflow and PR rules. |
 | An author of a small library for AI agents | A TypeScript package on npm | The release workflow publishes with provenance and refuses to publish a version twice. |
 | A team with an extension that has no browser tests | Firefox E2E tests in their own repo | `npm i -D create-foxkit`, then use `launch()` and `poll()` from `create-foxkit/e2e`. |
@@ -114,8 +118,8 @@ sequenceDiagram
   H->>F: new tab, load url
   T->>H: poll(page, fn)
   H->>F: run fn in the page until it returns a value
-  T->>H: openExtensionPage("page.html")
-  H->>F: load moz-extension://uuid/page.html, poll until loaded
+  T->>H: openExtensionPage("popup.html")
+  H->>F: load moz-extension://uuid/popup.html, poll until loaded
   T->>H: close()
   H->>F: stop Firefox, delete the profile
 ```
@@ -197,11 +201,12 @@ foxkit has a CLI (`create-foxkit`) and a library. It has no MCP server.
 | WebDriver BiDi `script` module | [script](https://developer.mozilla.org/en-US/docs/Web/WebDriver/Reference/BiDi/Modules/script) | `poll()` and `page.evaluate()` run functions in a page. |
 | `-remote-allow-system-access` command-line flag | No MDN page | Lets BiDi reach `moz-extension:` pages. |
 | `extensions.webextensions.uuids` preference | No MDN page | Fixes the extension UUID, so the `moz-extension:` URL is known before the add-on loads. |
-| `browser_specific_settings` (`gecko.id`, `data_collection_permissions`) | [browser_specific_settings](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/browser_specific_settings) | The fixture needs an ID. AMO requires the data collection key for new extensions. |
-| `background.scripts` | [background](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/background) | The fixture's background script. |
-| `content_scripts` | [content_scripts](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/content_scripts) | The fixture marks each page on `127.0.0.1`. |
-| `runtime.onInstalled` | [runtime.onInstalled](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/onInstalled) | The fixture stores its value at install time. |
-| `storage.local` | [storage.local](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/storage/local) | The fixture stores a value and `page.html` reads it. |
+| `browser_specific_settings` (`gecko.id`, `data_collection_permissions`) | [browser_specific_settings](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/browser_specific_settings) | The demo extension needs an ID and Firefox 153 (the current ESR). AMO requires the data collection key for new extensions. |
+| `background.scripts` | [background](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/background) | The demo extension's background script (an event page). |
+| `content_scripts` | [content_scripts](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/content_scripts) | The demo extension marks each page on `127.0.0.1`. |
+| `runtime.onInstalled` | [runtime.onInstalled](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/onInstalled) | The demo extension stores its value at install time. |
+| `action` popup | [action](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/action) | The page where a repo shows its primitive. The E2E test reads it. |
+| `storage.local` | [storage.local](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/storage/local) | The demo extension stores a value and `popup.html` reads it. |
 
 ## Limits
 
@@ -215,8 +220,10 @@ foxkit has a CLI (`create-foxkit`) and a library. It has no MCP server.
   both when the repo is yours.
 - The E2E library works with Firefox only. It is tested with Firefox 157 on
   macOS.
-- The library installs temporary add-ons only. It does not sign or package an
-  extension, and it does not run `web-ext lint`.
+- The E2E library installs temporary add-ons only. Signing happens only in
+  `release.yml`, and it has not run against AMO from this template yet.
+- The release signs the extension after the npm publish. If signing fails,
+  the npm version is already out, so fix the cause and bump the version.
 - The release workflow needs the repository secret `NPM_TOKEN`. Without it,
   the publish step fails with a clear error.
 - `writeArtifact()` names files by UTC date, so a second run on the same day
