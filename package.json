@@ -1,0 +1,48 @@
+{
+  "name": "create-foxkit",
+  "version": "0.1.0",
+  "description": "The template for fox repos: shared CI, Firefox E2E tests, and npm release.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Pooria Arab",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pooriaarab/foxkit.git"
+  },
+  "homepage": "https://github.com/pooriaarab/foxkit#readme",
+  "packageManager": "pnpm@11.10.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "create-foxkit": "dist/cli.js"
+  },
+  "exports": {
+    "./e2e": {
+      "types": "./dist/e2e.d.ts",
+      "default": "./dist/e2e.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "template"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --deny-warnings src tests scripts",
+    "test": "vitest run",
+    "ci:local": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "e2e": "pnpm build && node scripts/e2e.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "oxlint": "^1.87.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  },
+  "dependencies": {
+    "puppeteer-core": "^25.12.0"
+  }
+}
