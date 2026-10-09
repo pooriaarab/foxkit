@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "__NAME__ test fixture",
+  "version": "0.1.0",
+  "description": "A small extension that the E2E test installs in Firefox.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "e2e-fixture@__NAME__",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  },
+  "permissions": ["storage"],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://127.0.0.1/*"],
+      "js": ["content.js"]
+    }
+  ]
+}
