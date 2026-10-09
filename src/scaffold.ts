@@ -28,6 +28,8 @@ interface Options {
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const TEMPLATE = join(ROOT, "template");
 const MARKER = /foxkit:extension:(start|end)/;
+// Images are copied byte for byte: the text pass would break them (C26).
+const BINARY = /\.png$/;
 
 const USAGE = `Usage: create-foxkit <name> --prefix <p> --description "<one sentence>" [options]
 
@@ -137,8 +139,12 @@ function blocks(text: string, rel: string, extension: boolean): string {
 }
 
 /** Render one template directory into path -> content. Throws on an unknown placeholder. */
-function render(dir: string, values: Record<string, string>, extension: boolean, files = new Map<string, string>()): Map<string, string> {
+function render(dir: string, values: Record<string, string>, extension: boolean, files = new Map<string, string | Buffer>()): Map<string, string | Buffer> {
   for (const rel of walk(dir)) {
+    if (BINARY.test(rel)) {
+      files.set(rel, readFileSync(join(dir, rel)));
+      continue;
+    }
     const text = blocks(readFileSync(join(dir, rel), "utf8"), rel, extension);
     const json = rel.endsWith(".json");
     // One pass with a function: a value is never scanned again, and `$&` in a
@@ -164,7 +170,7 @@ function checkTarget(target: string): void {
 export async function run(argv: string[], io: Io): Promise<number> {
   let options: Options;
   let target: string;
-  let files: Map<string, string>;
+  let files: Map<string, string | Buffer>;
   try {
     const parsed = parse(argv);
     if (parsed.help) {
@@ -177,11 +183,12 @@ export async function run(argv: string[], io: Io): Promise<number> {
     files = render(join(TEMPLATE, "base"), placeholders(options), options.extension);
     if (options.extension) {
       render(join(TEMPLATE, "extension"), placeholders(options), true, files);
-      const pkg = JSON.parse(files.get("package.json") ?? "{}");
+      const pkg = JSON.parse(String(files.get("package.json") ?? "{}"));
       pkg.scripts["build:ext"] = "node scripts/build-ext.mjs";
       pkg.scripts["lint:ext"] = "web-ext lint -s dist-ext --warnings-as-errors";
-      pkg.scripts["ci:local"] += " && pnpm build:ext && pnpm lint:ext";
-      pkg.scripts.e2e = "pnpm build:ext && node e2e/run.mjs";
+      pkg.scripts["check:amo"] = "node scripts/amo-listing.mjs check";
+      pkg.scripts["ci:local"] += " && pnpm build:ext && pnpm lint:ext && pnpm check:amo";
+      pkg.scripts.e2e = "node scripts/build-ext.mjs --e2e && node e2e/run.mjs";
       Object.assign(pkg.devDependencies, { "create-foxkit": options.foxkit, esbuild: "^0.28.2", "web-ext": "^10.7.0" });
       files.set("package.json", `${JSON.stringify(pkg, null, 2)}\n`);
     }

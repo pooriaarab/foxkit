@@ -4,6 +4,7 @@ dist/
 .DS_Store
 # foxkit:extension:start
 dist-ext/
+dist-e2e/
 web-ext-artifacts/
 source.zip
 # foxkit:extension:end

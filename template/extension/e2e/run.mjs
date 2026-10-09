@@ -1,4 +1,5 @@
-// The E2E test: install the built extension (dist-ext/) in a real Firefox,
+// The E2E test: install the E2E build (dist-e2e/: the extension plus the
+// content script from e2e/extension/) in a real Firefox,
 // check that it runs in a page and stores a value, and write
 // artifacts/e2e-<date>.json.
 // Usage: pnpm e2e [--headed]. Env: FIREFOX (the Firefox binary).
@@ -10,7 +11,7 @@ const check = (name, expected, actual) => record.checks.push({ name, expected, a
 const site = await serve("e2e/site");
 let fox;
 try {
-  fox = await launch({ extension: "dist-ext", headless: !process.argv.includes("--headed") });
+  fox = await launch({ extension: "dist-e2e", headless: !process.argv.includes("--headed") });
   record.firefox = await fox.browser.version();
   const page = await fox.open(`${site.url}/index.html`);
   check("content script ran in the page", "content-script-ran", await poll(page, () => document.documentElement.dataset.fixture));
