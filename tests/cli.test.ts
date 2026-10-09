@@ -244,6 +244,30 @@ describe("the listed extension", () => {
     expect(manifest.action.default_icon["48"]).toBe("icons/icon-48.png");
   });
 
+  it("C29 keeps the E2E content script out of the release build", async () => {
+    expect(await cli(...ok, "--extension")).toBe(0);
+    const manifest = JSON.parse(read("extension/manifest.json"));
+    expect(manifest.content_scripts).toBeUndefined();
+    expect(JSON.stringify(manifest)).not.toMatch(/127\.0\.0\.1|localhost/);
+    const made = files(join(cwd, "demo"));
+    expect(made.filter((f) => f.startsWith("extension/") && /(^|[/._-])(e2e|fixtures?|tests?|spec)([/._-]|$)/i.test(f.slice("extension/".length)))).toEqual([]);
+    expect(made).toContain("e2e/extension/e2e-content.js");
+    const pkg = JSON.parse(read("package.json"));
+    expect(pkg.scripts.e2e).toContain("build-ext.mjs --e2e");
+    expect(read("e2e/run.mjs")).toContain('"dist-e2e"');
+    expect(read(".gitignore")).toContain("dist-e2e/");
+    expect(read("scripts/amo-listing.mjs")).toContain("scanReleaseBuild");
+  });
+
+  it("C30 skips the AMO submission when AMO already has the version as listed", async () => {
+    expect(await cli(...ok, "--extension")).toBe(0);
+    const release = read(".github/workflows/release.yml");
+    expect(release).toContain("node scripts/amo-listing.mjs version-status");
+    expect(release.indexOf("version-status")).toBeLessThan(release.indexOf("web-ext sign"));
+    expect(release).toContain("Skipping web-ext sign");
+    expect(read("scripts/amo-listing.mjs")).toContain("versions/v${manifest.version}/?filter=all_with_unlisted");
+  });
+
   it("C27 has the AMO listing, checks it in ci:local and shows no demo wording", async () => {
     expect(await cli(...ok, "--extension")).toBe(0);
     const meta = JSON.parse(read("extension/amo-metadata.json"));
