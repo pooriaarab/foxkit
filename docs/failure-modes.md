@@ -26,3 +26,19 @@ refuse bad input before it writes anything.
 | C13 | npm drops `.gitignore` from a published package, so the new repo has none. | The template stores `_gitignore`. The command writes it as `.gitignore`. | `tests/cli.test.ts` |
 | C14 | The new repo has no Git repository, or its branch is not `main`. | The command runs `git init -b main`. If Git fails, exit 1 and say why. | `tests/cli.test.ts` |
 | C15 | The user does not know what to do next. | The command prints the next steps: `cd`, `pnpm install`, `pnpm ci:local`. | `tests/cli.test.ts` |
+
+## The E2E harness (`create-foxkit/e2e`)
+
+| # | Failure mode | Wanted behaviour | Test |
+|---|---|---|---|
+| H1 | Firefox is not at the path. | `launch()` throws an error that names the path and the `FIREFOX` variable. It starts nothing. | `tests/e2e.test.ts` |
+| H2 | The extension directory has no `manifest.json`, or the manifest has no `browser_specific_settings.gecko.id`. | `launch()` throws an error that names the file. It starts nothing. | `tests/e2e.test.ts` |
+| H3 | WebDriver BiDi refuses `moz-extension:` pages. | `launch()` always passes `-remote-allow-system-access` to Firefox. | `scripts/e2e.mjs` reads the fixture page |
+| H4 | `goto()` never resolves on a `moz-extension:` page, because BiDi sends no navigation events for it. | `openExtensionPage()` does not wait for `goto()`. It polls `location.href` and `document.readyState`. | `scripts/e2e.mjs` reads the fixture page |
+| H5 | A condition never becomes true. | `poll()` throws after its timeout, and the error names the timeout. It does not hang. | `tests/e2e.test.ts` |
+| H6 | `close()` leaves Firefox running or the temporary profile on disk, or a second `close()` throws. | `close()` stops Firefox and deletes the profile. A second call does nothing. | `scripts/e2e.mjs` checks the profile is gone |
+| H7 | `launch()` fails after Firefox starts, for example when the extension does not install. | `launch()` closes Firefox and deletes the profile, then throws. | Not tested: it needs a Firefox that fails on purpose. |
+| H8 | `serve()` returns a file outside its directory for a path such as `/../package.json`. | It answers 404. | `tests/e2e.test.ts` |
+| H9 | `serve()` gets a path for a file that does not exist. | It answers 404. | `tests/e2e.test.ts` |
+| H10 | `writeArtifact()` gets a directory that does not exist, or writes a file name that changes on each run of the same day. | It creates the directory. It writes `<name>-<YYYY-MM-DD>.json` with valid JSON. | `tests/e2e.test.ts` |
+| H11 | A function given to `page.evaluate()` uses a variable from outside it. | Nothing can catch this at run time: the function runs in the page, without its closure. The README says to pass values as arguments. | README |

@@ -17,6 +17,13 @@
   "bin": {
     "create-foxkit": "dist/cli.js"
   },
+  "exports": {
+    "./e2e": {
+      "types": "./dist/e2e.d.ts",
+      "default": "./dist/e2e.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "dist",
     "template"
@@ -33,5 +40,8 @@
     "oxlint": "^1.87.0",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"
+  },
+  "dependencies": {
+    "puppeteer-core": "^25.12.0"
   }
 }
