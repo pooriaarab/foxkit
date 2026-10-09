@@ -20,9 +20,14 @@ interface Options {
   description: string;
   package: string;
   owner: string;
+  extension: boolean;
+  /** The version spec of the create-foxkit dev dependency (--extension only). */
+  foxkit: string;
 }
 
-const TEMPLATE = fileURLToPath(new URL("../template", import.meta.url));
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
+const TEMPLATE = join(ROOT, "template");
+const MARKER = /foxkit:extension:(start|end)/;
 
 const USAGE = `Usage: create-foxkit <name> --prefix <p> --description "<one sentence>" [options]
 
@@ -33,18 +38,24 @@ Options:
   --description <text>  one sentence, at most 120 characters (required)
   --package <name>      npm package name (default: <name>)
   --owner <user>        GitHub owner of the repo (default: pooriaarab)
+  --extension           add a test extension, the e2e script and an E2E CI job
+  --foxkit <spec>       create-foxkit version for the e2e script (default: ^<this version>)
   -h, --help            show this help`;
 
-const VALUE_FLAGS = new Set(["prefix", "description", "package", "owner"]);
+const VALUE_FLAGS = new Set(["prefix", "description", "package", "owner", "foxkit"]);
 
 class UsageError extends Error {}
 
 function parse(argv: string[]): Partial<Options> & { help?: boolean } {
-  const values: Record<string, string> = {};
+  const values: Record<string, string | boolean> = {};
   const names: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i] ?? "";
     if (arg === "-h" || arg === "--help") return { help: true };
+    if (arg === "--extension") {
+      values.extension = true;
+      continue;
+    }
     if (!arg.startsWith("--")) {
       names.push(arg);
       continue;
@@ -65,8 +76,8 @@ function parse(argv: string[]): Partial<Options> & { help?: boolean } {
 
 function validate(o: Partial<Options>): Options {
   const name = o.name ?? "";
-  if (!/^[a-z0-9][a-z0-9._-]{0,99}$/.test(name)) {
-    throw new UsageError(`Name "${name}" is not valid. Use lowercase letters, digits, ".", "_" and "-".`);
+  if (!/^[a-z0-9][a-z0-9._-]{0,59}$/.test(name)) {
+    throw new UsageError(`Name "${name}" is not valid. Use at most 60 lowercase letters, digits, ".", "_" and "-".`);
   }
   if (o.prefix === undefined) throw new UsageError("Give --prefix.");
   if (!/^[a-z]{2,5}$/.test(o.prefix)) throw new UsageError(`Prefix "${o.prefix}" is not valid. Use 2 to 5 lowercase letters.`);
@@ -81,7 +92,11 @@ function validate(o: Partial<Options>): Options {
   }
   const owner = o.owner ?? "pooriaarab";
   if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(owner)) throw new UsageError(`Owner "${owner}" is not a valid GitHub name.`);
-  return { name, prefix: o.prefix, description, package: pkg, owner };
+  const extension = o.extension === true;
+  if (o.foxkit !== undefined && !extension) throw new UsageError("--foxkit has an effect only with --extension.");
+  if (o.foxkit !== undefined && !o.foxkit.trim()) throw new UsageError("--foxkit is empty.");
+  const own = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { version: string };
+  return { name, prefix: o.prefix, description, package: pkg, owner, extension, foxkit: o.foxkit ?? `^${own.version}` };
 }
 
 function placeholders(o: Options): Record<string, string> {
@@ -102,11 +117,25 @@ function walk(dir: string): string[] {
     .toSorted();
 }
 
+/** Keep or drop the lines between foxkit:extension:start and :end, and drop the marker lines. */
+function blocks(text: string, rel: string, extension: boolean): string {
+  const out: string[] = [];
+  let inside = false;
+  for (const line of text.split("\n")) {
+    const marker = MARKER.exec(line)?.[1];
+    if (marker === "start" && !inside) inside = true;
+    else if (marker === "end" && inside) inside = false;
+    else if (marker) throw new Error(`Template bug: unbalanced foxkit:extension:${marker} in ${rel}.`);
+    else if (!inside || extension) out.push(line);
+  }
+  if (inside) throw new Error(`Template bug: foxkit:extension:start without an end in ${rel}.`);
+  return out.join("\n");
+}
+
 /** Render one template directory into path -> content. Throws on an unknown placeholder. */
-function render(dir: string, values: Record<string, string>): Map<string, string> {
-  const files = new Map<string, string>();
+function render(dir: string, values: Record<string, string>, extension: boolean, files = new Map<string, string>()): Map<string, string> {
   for (const rel of walk(dir)) {
-    const text = readFileSync(join(dir, rel), "utf8");
+    const text = blocks(readFileSync(join(dir, rel), "utf8"), rel, extension);
     const json = rel.endsWith(".json");
     // One pass with a function: a value is never scanned again, and `$&` in a
     // value is not a replace pattern.
@@ -141,7 +170,14 @@ export async function run(argv: string[], io: Io): Promise<number> {
     options = validate(parsed);
     target = resolve(io.cwd, options.name);
     checkTarget(target);
-    files = render(join(TEMPLATE, "base"), placeholders(options));
+    files = render(join(TEMPLATE, "base"), placeholders(options), options.extension);
+    if (options.extension) {
+      render(join(TEMPLATE, "extension"), placeholders(options), true, files);
+      const pkg = JSON.parse(files.get("package.json") ?? "{}");
+      pkg.scripts.e2e = "node e2e/run.mjs";
+      pkg.devDependencies["create-foxkit"] = options.foxkit;
+      files.set("package.json", `${JSON.stringify(pkg, null, 2)}\n`);
+    }
   } catch (error) {
     if (!(error instanceof UsageError)) throw error;
     io.err(error.message);
@@ -167,6 +203,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
   io.out(`  cd ${relative(io.cwd, target) || "."}`);
   io.out("  pnpm install");
   io.out("  pnpm ci:local");
+  if (options.extension) io.out("  pnpm e2e");
   io.out('  git add -A && git commit -m "Start the repo from foxkit"');
   return 0;
 }

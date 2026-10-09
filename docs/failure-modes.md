@@ -12,7 +12,7 @@ refuse bad input before it writes anything.
 | # | Failure mode | Wanted behaviour | Test |
 |---|---|---|---|
 | C1 | The name is missing, or there are two names. | Exit 2. Show the usage. Write nothing. | `tests/cli.test.ts` |
-| C2 | The name is not a safe directory and repo name (uppercase, a space, a slash, `..`). | Exit 2. Write nothing. | `tests/cli.test.ts` |
+| C2 | The name is not a safe directory and repo name (uppercase, a space, a slash, `..`, more than 60 characters). | Exit 2. Write nothing. | `tests/cli.test.ts` |
 | C3 | `--prefix` is missing, or it is not 2 to 5 lowercase letters. | Exit 2. Write nothing. | `tests/cli.test.ts` |
 | C4 | `--description` is missing, empty, has a line break, or is longer than 120 characters. | Exit 2. Write nothing. | `tests/cli.test.ts` |
 | C5 | `--package` is not a valid npm package name. | Exit 2. Write nothing. | `tests/cli.test.ts` |
@@ -26,6 +26,16 @@ refuse bad input before it writes anything.
 | C13 | npm drops `.gitignore` from a published package, so the new repo has none. | The template stores `_gitignore`. The command writes it as `.gitignore`. | `tests/cli.test.ts` |
 | C14 | The new repo has no Git repository, or its branch is not `main`. | The command runs `git init -b main`. If Git fails, exit 1 and say why. | `tests/cli.test.ts` |
 | C15 | The user does not know what to do next. | The command prints the next steps: `cd`, `pnpm install`, `pnpm ci:local`. | `tests/cli.test.ts` |
+
+## The --extension option
+
+| # | Failure mode | Wanted behaviour | Test |
+|---|---|---|---|
+| C16 | A repo made without `--extension` gets the fixture, the `e2e` script, or the E2E CI job. | It gets none of them. | `tests/cli.test.ts` |
+| C17 | A repo made with `--extension` lacks the fixture, the `e2e` script, the `create-foxkit` dev dependency, or the E2E CI job. | It has all four. | `tests/cli.test.ts` |
+| C18 | A `foxkit:extension` marker line stays in a generated file. | No file holds a marker. An unclosed marker in the template stops the command before it writes. | `tests/cli.test.ts` |
+| C19 | The fixture's gecko ID breaks the MDN rules: the pattern `^[a-zA-Z0-9-._]*@[a-zA-Z0-9-._]+$`, at most 80 characters. | The ID is `e2e-fixture@<name>`. A name has at most 60 characters, so the ID fits. | `tests/cli.test.ts` |
+| C20 | `--foxkit` is given without `--extension`, so it does nothing. | Exit 2. Write nothing. Without `--foxkit`, the dev dependency is `^<this create-foxkit version>`. | `tests/cli.test.ts` |
 
 ## The E2E harness (`create-foxkit/e2e`)
 
