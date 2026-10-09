@@ -265,7 +265,13 @@ describe("the listed extension", () => {
     expect(release).toContain("node scripts/amo-listing.mjs version-status");
     expect(release.indexOf("version-status")).toBeLessThan(release.indexOf("web-ext sign"));
     expect(release).toContain("Skipping web-ext sign");
-    expect(read("scripts/amo-listing.mjs")).toContain("versions/v${manifest.version}/?filter=all_with_unlisted");
+  });
+
+  it("C31 asks AMO for one version with no filter parameter", async () => {
+    expect(await cli(...ok, "--extension")).toBe(0);
+    const listing = read("scripts/amo-listing.mjs");
+    expect(listing).toContain("versions/v${manifest.version}/`");
+    expect(listing).not.toContain("filter=");
   });
 
   it("C27 has the AMO listing, checks it in ci:local and shows no demo wording", async () => {
