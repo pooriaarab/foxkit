@@ -66,6 +66,10 @@ src/              the library source, built to dist/ by tsc
 tests/            tests for the failure modes in docs/failure-modes.md
 docs/failure-modes.md  every way the code can fail, written before the code
 .github/          CI, release, PR and issue standards
+<!-- foxkit:extension:start -->
+extension/        a small test extension that e2e/run.mjs installs in Firefox
+e2e/run.mjs       the Firefox E2E test; writes artifacts/e2e-<date>.json
+<!-- foxkit:extension:end -->
 ```
 
 ## Commands
@@ -73,6 +77,9 @@ docs/failure-modes.md  every way the code can fail, written before the code
 ```bash
 pnpm install
 pnpm ci:local   # lint + typecheck + test + build; run before every hand-off
+<!-- foxkit:extension:start -->
+pnpm e2e        # Firefox E2E; set FIREFOX if Firefox is not in the usual place
+<!-- foxkit:extension:end -->
 ```
 
 ## Testing
