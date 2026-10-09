@@ -1,5 +1,5 @@
 {
-  "startedAt": "2026-10-09T18:08:40.350Z",
+  "startedAt": "2026-10-09T03:23:53.523Z",
   "node": "v25.9.0",
   "steps": [
     {
@@ -9,7 +9,7 @@
       "exitCode": 0,
       "expectedExit": 0,
       "ok": true,
-      "ms": 155
+      "ms": 153
     },
     {
       "name": "plain repo has no placeholder or marker",
@@ -27,7 +27,7 @@
       "exitCode": 0,
       "expectedExit": 0,
       "ok": true,
-      "ms": 2100
+      "ms": 1044
     },
     {
       "name": "pnpm ci:local (plain)",
@@ -36,16 +36,16 @@
       "exitCode": 0,
       "expectedExit": 0,
       "ok": true,
-      "ms": 5247
+      "ms": 4603
     },
     {
       "name": "scaffold a repo with --extension",
-      "command": "node <foxkit>/dist/cli.js ext-sample --prefix ext --description An extension sample repo. --extension --foxkit file:<foxkit>/",
+      "command": "node <foxkit>/dist/cli.js ext-demo --prefix ext --description An extension demo repo. --extension --foxkit file:<foxkit>/",
       "cwd": ".",
       "exitCode": 0,
       "expectedExit": 0,
       "ok": true,
-      "ms": 213
+      "ms": 229
     },
     {
       "name": "extension repo has no placeholder or marker",
@@ -55,41 +55,33 @@
     {
       "name": "pnpm install (extension)",
       "command": "pnpm install --no-frozen-lockfile",
-      "cwd": "ext-sample",
+      "cwd": "ext-demo",
       "exitCode": 0,
       "expectedExit": 0,
       "ok": true,
-      "ms": 4852
+      "ms": 3429
     },
     {
       "name": "pnpm ci:local (extension, with build:ext and web-ext lint)",
       "command": "pnpm ci:local",
-      "cwd": "ext-sample",
+      "cwd": "ext-demo",
       "exitCode": 0,
       "expectedExit": 0,
       "ok": true,
-      "ms": 9075
+      "ms": 6906
     },
     {
       "name": "web-ext lint reports 0 errors and 0 warnings",
       "ok": true
     },
     {
-      "name": "check:amo passes the generated AMO listing (C27)",
-      "ok": true
-    },
-    {
-      "name": "dist-ext/ leaves out amo-metadata.json (C28)",
-      "ok": true
-    },
-    {
       "name": "pnpm e2e (extension, real Firefox)",
       "command": "pnpm e2e",
-      "cwd": "ext-sample",
+      "cwd": "ext-demo",
       "exitCode": 0,
       "expectedExit": 0,
       "ok": true,
-      "ms": 5055
+      "ms": 4978
     },
     {
       "name": "extension repo artifact says passed",
@@ -102,11 +94,11 @@
     {
       "name": "build:ext refuses a manifest version that differs from package.json",
       "command": "pnpm build:ext",
-      "cwd": "ext-sample",
+      "cwd": "ext-demo",
       "exitCode": 1,
       "expectedExit": 1,
       "ok": true,
-      "ms": 2368
+      "ms": 784
     },
     {
       "name": "the refusal names both versions",
@@ -120,7 +112,7 @@
     {
       "name": "close() deleted the profile, and a second close() did not throw",
       "ok": true,
-      "detail": "foxkit-profile-nY9imm"
+      "detail": "foxkit-profile-C1VyVs"
     },
     {
       "name": "refuse a directory that is not empty",
@@ -129,13 +121,13 @@
       "exitCode": 2,
       "expectedExit": 2,
       "ok": true,
-      "ms": 119
+      "ms": 115
     }
   ],
   "pnpm": "11.10.0",
-  "gitSha": "551c82637f6de96b530a17d53f2ad77d67113dd6",
+  "gitSha": "075aad684d60a04af846bd5eb44096beff9a3bff",
   "extensionRepoArtifact": {
-    "startedAt": "2026-10-09T18:09:04.929Z",
+    "startedAt": "2026-10-09T03:24:11.905Z",
     "checks": [
       {
         "name": "content script ran in the page",
@@ -155,5 +147,5 @@
   },
   "firefox": "firefox/157.0.1",
   "passed": true,
-  "finishedAt": "2026-10-09T18:09:13.240Z"
+  "finishedAt": "2026-10-09T03:24:19.716Z"
 }

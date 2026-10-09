@@ -68,8 +68,9 @@ docs/failure-modes.md  every way the code can fail, written before the code
 .github/          CI, release, PR and issue standards
 <!-- foxkit:extension:start -->
 extension/        the extension that shows this repo working in Firefox
-scripts/build-ext.mjs  bundles extension/ into dist-ext/ with esbuild
-e2e/run.mjs       the Firefox E2E test; writes artifacts/e2e-<date>.json
+scripts/build-ext.mjs  bundles extension/ into dist-ext/ (release) or, with --e2e, dist-e2e/
+e2e/run.mjs       the Firefox E2E test on dist-e2e/; writes artifacts/e2e-<date>.json
+e2e/extension/    E2E-only extension parts; never in dist-ext/
 <!-- foxkit:extension:end -->
 ```
 
@@ -81,7 +82,7 @@ pnpm ci:local   # lint + typecheck + test + build; run before every hand-off
 <!-- foxkit:extension:start -->
 pnpm build:ext  # extension/ -> dist-ext/; fails if the manifest and package.json versions differ
 pnpm lint:ext   # web-ext lint on dist-ext/ (part of ci:local)
-pnpm e2e        # Firefox E2E; set FIREFOX if Firefox is not in the usual place
+pnpm e2e        # builds dist-e2e/, then Firefox E2E; set FIREFOX if Firefox is not in the usual place
 <!-- foxkit:extension:end -->
 ```
 
@@ -104,5 +105,7 @@ with the listing in `extension/amo-metadata.json`. AMO reviews the version
 before it signs it, so the GitHub release links to the listing and has no
 `.xpi`. It needs the secrets `AMO_JWT_ISSUER` and `AMO_JWT_SECRET`. Keep the
 `version` in `extension/manifest.json` equal to the one in `package.json`.
-`pnpm check:amo` checks the listing; it runs in `pnpm ci:local`.
+`pnpm check:amo` checks the listing and the release build in `dist-ext/`;
+it runs in `pnpm ci:local`. Keep test-only parts in `e2e/extension/`. If a
+release re-run finds the version already listed on AMO, it skips the upload.
 <!-- foxkit:extension:end -->

@@ -188,7 +188,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
       pkg.scripts["lint:ext"] = "web-ext lint -s dist-ext --warnings-as-errors";
       pkg.scripts["check:amo"] = "node scripts/amo-listing.mjs check";
       pkg.scripts["ci:local"] += " && pnpm build:ext && pnpm lint:ext && pnpm check:amo";
-      pkg.scripts.e2e = "pnpm build:ext && node e2e/run.mjs";
+      pkg.scripts.e2e = "node scripts/build-ext.mjs --e2e && node e2e/run.mjs";
       Object.assign(pkg.devDependencies, { "create-foxkit": options.foxkit, esbuild: "^0.28.2", "web-ext": "^10.7.0" });
       files.set("package.json", `${JSON.stringify(pkg, null, 2)}\n`);
     }
