@@ -4,7 +4,7 @@
 // in memory before it writes one byte.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export interface Io {
@@ -56,10 +56,11 @@ function parse(argv: string[]): Partial<Options> & { help?: boolean } {
       values.extension = true;
       continue;
     }
-    if (!arg.startsWith("--")) {
+    if (!arg.startsWith("-")) {
       names.push(arg);
       continue;
     }
+    if (!arg.startsWith("--")) throw new UsageError(`Unknown option ${arg}.`);
     const eq = arg.indexOf("=");
     const flag = arg.slice(2, eq === -1 ? undefined : eq);
     if (!VALUE_FLAGS.has(flag)) throw new UsageError(`Unknown option ${arg}.`);
@@ -113,7 +114,8 @@ function placeholders(o: Options): Record<string, string> {
 function walk(dir: string): string[] {
   return readdirSync(dir, { recursive: true, withFileTypes: true })
     .filter((e) => e.isFile())
-    .map((e) => relative(dir, join(e.parentPath, e.name)))
+    // Keys use "/" on every platform, so "_gitignore" matching works on Windows.
+    .map((e) => relative(dir, join(e.parentPath, e.name)).split(sep).join("/"))
     .toSorted();
 }
 
