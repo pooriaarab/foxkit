@@ -34,8 +34,21 @@ refuse bad input before it writes anything.
 | C16 | A repo made without `--extension` gets the fixture, the `e2e` script, or the E2E CI job. | It gets none of them. | `tests/cli.test.ts` |
 | C17 | A repo made with `--extension` lacks the fixture, the `e2e` script, the `create-foxkit` dev dependency, or the E2E CI job. | It has all four. | `tests/cli.test.ts` |
 | C18 | A `foxkit:extension` marker line stays in a generated file. | No file holds a marker. An unclosed marker in the template stops the command before it writes. | `tests/cli.test.ts` |
-| C19 | The fixture's gecko ID breaks the MDN rules: the pattern `^[a-zA-Z0-9-._]*@[a-zA-Z0-9-._]+$`, at most 80 characters. | The ID is `e2e-fixture@<name>`. A name has at most 60 characters, so the ID fits. | `tests/cli.test.ts` |
+| C19 | The extension's gecko ID breaks the MDN rules: the pattern `^[a-zA-Z0-9-._]*@[a-zA-Z0-9-._]+$`, at most 80 characters. | The ID is `<name>@<owner>`. When it is longer than 80 characters, exit 2 and write nothing. | `tests/cli.test.ts` |
 | C20 | `--foxkit` is given without `--extension`, so it does nothing. | Exit 2. Write nothing. Without `--foxkit`, the dev dependency is `^<this create-foxkit version>`. | `tests/cli.test.ts` |
+
+## The signed demo extension (`--extension`)
+
+Every fox repo ships a demo extension. AMO signs it, and the GitHub release
+carries the `.xpi`.
+
+| # | Failure mode | Wanted behaviour | Test |
+|---|---|---|---|
+| C21 | The manifest breaks a Firefox fact from the BRIEF: no `strict_min_version` of `153.0`, no `data_collection_permissions`, or no page to show the primitive. | The manifest has all three. The page is an `action` popup. | `tests/cli.test.ts` |
+| C22 | `ci:local` does not build the extension or does not run `web-ext lint`, so a broken extension passes CI. | `ci:local` runs `build:ext` (esbuild to `dist-ext/`) and `lint:ext` (`web-ext lint`). | `tests/cli.test.ts`; `scripts/e2e.mjs` runs it |
+| C23 | The manifest version differs from the `package.json` version, so AMO signs one version and npm publishes another. | `build:ext` exits 1 and names both versions. `release.yml` runs it through `ci:local`. | `scripts/e2e.mjs` changes the version and expects exit 1 |
+| C24 | `release.yml` publishes without signing, signs with an empty secret, sends no source to AMO, or makes a release with no `.xpi`. | The extension variant signs with `web-ext sign --channel=unlisted`, fails when `AMO_JWT_ISSUER` or `AMO_JWT_SECRET` is empty, uploads `git archive` source, and attaches the `.xpi`. A plain repo has no signing step. | `tests/cli.test.ts` |
+| C25 | Build output (`dist-ext/`, `web-ext-artifacts/`) gets committed. | `.gitignore` lists both in the extension variant. | `tests/cli.test.ts` |
 
 ## The E2E harness (`create-foxkit/e2e`)
 

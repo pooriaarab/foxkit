@@ -166,18 +166,66 @@ describe("the --extension option", () => {
     }
   });
 
-  it("C19 gives the fixture a valid gecko ID, even for a 60-character name", async () => {
+  it("C19 gives the extension a valid gecko ID, even for a 60-character name", async () => {
     const name = "a".repeat(60);
     expect(await cli(name, "--prefix", "dmo", "--description", "x", "--extension")).toBe(0);
     const manifest = JSON.parse(readFileSync(join(cwd, name, "extension", "manifest.json"), "utf8"));
     const id: string = manifest.browser_specific_settings.gecko.id;
+    expect(id).toBe(`${name}@pooriaarab`);
     expect(id).toMatch(/^[a-zA-Z0-9-._]*@[a-zA-Z0-9-._]+$/);
     expect(id.length).toBeLessThanOrEqual(80);
+  });
+
+  it("C19 refuses a gecko ID over 80 characters and writes nothing", async () => {
+    expect(await cli("a".repeat(60), "--prefix", "dmo", "--description", "x", "--extension", "--owner", "b".repeat(30))).toBe(2);
+    expect(readdirSync(cwd)).toEqual([]);
   });
 
   it("C20 defaults the dev dependency to this create-foxkit version", async () => {
     expect(await cli(...ok, "--extension")).toBe(0);
     const own = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
     expect(JSON.parse(read("package.json")).devDependencies["create-foxkit"]).toBe(`^${own.version}`);
+  });
+});
+
+describe("the signed demo extension", () => {
+  it("C21 sets the Firefox facts in the manifest and has a popup", async () => {
+    expect(await cli(...ok, "--extension")).toBe(0);
+    const manifest = JSON.parse(read("extension/manifest.json"));
+    expect(manifest.browser_specific_settings.gecko.strict_min_version).toBe("153.0");
+    expect(manifest.browser_specific_settings.gecko.data_collection_permissions.required).toEqual(["none"]);
+    expect(manifest.action.default_popup).toBeTypeOf("string");
+    expect(files(join(cwd, "demo"))).toContain(`extension/${manifest.action.default_popup}`);
+    expect(manifest.version).toBe(JSON.parse(read("package.json")).version);
+  });
+
+  it("C22 builds and lints the extension in ci:local", async () => {
+    expect(await cli(...ok, "--extension")).toBe(0);
+    const pkg = JSON.parse(read("package.json"));
+    expect(pkg.scripts["ci:local"]).toContain("pnpm build:ext");
+    expect(pkg.scripts["ci:local"]).toContain("pnpm lint:ext");
+    expect(pkg.scripts["lint:ext"]).toContain("web-ext lint");
+    expect(pkg.devDependencies["web-ext"]).toBeTypeOf("string");
+    expect(pkg.devDependencies.esbuild).toBeTypeOf("string");
+  });
+
+  it("C24 signs with AMO and attaches the .xpi only in the extension variant", async () => {
+    expect(await cli(...ok, "--extension")).toBe(0);
+    const release = read(".github/workflows/release.yml");
+    for (const text of ["web-ext sign", "--channel=unlisted", "--upload-source-code", "git archive", "web-ext-artifacts/*.xpi"]) {
+      expect(release).toContain(text);
+    }
+    for (const name of ["AMO_JWT_ISSUER", "AMO_JWT_SECRET"]) expect(release).toContain(`secrets.${name}`);
+    expect(await cli("plain", "--prefix", "dmo", "--description", "x")).toBe(0);
+    const plain = readFileSync(join(cwd, "plain", ".github", "workflows", "release.yml"), "utf8");
+    expect(plain).not.toContain("web-ext");
+    expect(plain).not.toContain("AMO_JWT");
+  });
+
+  it("C25 ignores the extension build output", async () => {
+    expect(await cli(...ok, "--extension")).toBe(0);
+    const ignore = read(".gitignore");
+    expect(ignore).toContain("dist-ext/");
+    expect(ignore).toContain("web-ext-artifacts/");
   });
 });
