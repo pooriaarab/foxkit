@@ -188,7 +188,7 @@ describe("the --extension option", () => {
   });
 });
 
-describe("the signed demo extension", () => {
+describe("the listed extension", () => {
   it("C21 sets the Firefox facts in the manifest and has a popup", async () => {
     expect(await cli(...ok, "--extension")).toBe(0);
     const manifest = JSON.parse(read("extension/manifest.json"));
@@ -209,17 +209,20 @@ describe("the signed demo extension", () => {
     expect(pkg.devDependencies.esbuild).toBeTypeOf("string");
   });
 
-  it("C24 signs with AMO and attaches the .xpi only in the extension variant", async () => {
+  it("C24 submits a listed add-on to AMO only in the extension variant", async () => {
     expect(await cli(...ok, "--extension")).toBe(0);
     const release = read(".github/workflows/release.yml");
-    for (const text of ["web-ext sign", "--channel=unlisted", "--upload-source-code", "git archive", "web-ext-artifacts/*.xpi"]) {
+    for (const text of ["web-ext sign", "--channel=listed", "--amo-metadata", "--approval-timeout=0", "--upload-source-code", "git archive", "Waiting for approval and download of signed XPI skipped", "amo-listing.mjs after-submit", "Submitted for AMO review"]) {
       expect(release).toContain(text);
     }
+    expect(release).not.toContain("--channel=unlisted");
+    expect(release).not.toContain(".xpi");
     for (const name of ["AMO_JWT_ISSUER", "AMO_JWT_SECRET"]) expect(release).toContain(`secrets.${name}`);
     expect(await cli("plain", "--prefix", "dmo", "--description", "x")).toBe(0);
     const plain = readFileSync(join(cwd, "plain", ".github", "workflows", "release.yml"), "utf8");
     expect(plain).not.toContain("web-ext");
     expect(plain).not.toContain("AMO_JWT");
+    expect(plain).toContain("gh release create");
   });
 
   it("C25 ignores the extension build output", async () => {
@@ -227,5 +230,35 @@ describe("the signed demo extension", () => {
     const ignore = read(".gitignore");
     expect(ignore).toContain("dist-ext/");
     expect(ignore).toContain("web-ext-artifacts/");
+  });
+
+  it("C26 copies the PNG icons byte for byte and names them in the manifest", async () => {
+    expect(await cli(...ok, "--extension")).toBe(0);
+    const template = new URL("../template/extension/extension/icons/", import.meta.url);
+    const manifest = JSON.parse(read("extension/manifest.json"));
+    for (const size of ["48", "96", "128"]) {
+      expect(manifest.icons[size]).toBe(`icons/icon-${size}.png`);
+      const made = readFileSync(join(cwd, "demo", "extension", "icons", `icon-${size}.png`));
+      expect(made.equals(readFileSync(new URL(`icon-${size}.png`, template)))).toBe(true);
+    }
+    expect(manifest.action.default_icon["48"]).toBe("icons/icon-48.png");
+  });
+
+  it("C27 has the AMO listing, checks it in ci:local and shows no demo wording", async () => {
+    expect(await cli(...ok, "--extension")).toBe(0);
+    const meta = JSON.parse(read("extension/amo-metadata.json"));
+    const manifest = JSON.parse(read("extension/manifest.json"));
+    expect(meta.name["en-US"]).toBe(manifest.name);
+    expect(meta.slug).toBe("demo");
+    expect(meta.version.license).toBe("MIT");
+    expect(meta.homepage["en-US"]).toBe("https://github.com/pooriaarab/demo");
+    expect(meta.support_url["en-US"]).toBe("https://github.com/pooriaarab/demo/issues");
+    expect(read("scripts/amo-listing.mjs")).toContain("after-submit");
+    const pkg = JSON.parse(read("package.json"));
+    expect(pkg.scripts["check:amo"]).toBe("node scripts/amo-listing.mjs check");
+    expect(pkg.scripts["ci:local"]).toContain("pnpm check:amo");
+    for (const text of [manifest.name, manifest.action.default_title, /<title>(.*)<\/title>/.exec(read("extension/popup.html"))?.[1]]) {
+      expect(text).toBe("demo");
+    }
   });
 });
