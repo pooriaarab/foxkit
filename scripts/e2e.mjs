@@ -13,7 +13,7 @@
 // Usage: pnpm e2e (it builds first). Env: FIREFOX (the Firefox binary).
 // Firefox cannot start inside a sandbox that blocks it.
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,13 +62,24 @@ try {
   step("pnpm ci:local (plain)", "pnpm", ["ci:local"], plain);
 
   // 2. A repo with --extension, using this checkout as create-foxkit.
-  const ext = join(work, "ext-demo");
-  step("scaffold a repo with --extension", "node", [cli, "ext-demo", "--prefix", "ext", "--description", "An extension demo repo.", "--extension", "--foxkit", `file:${root}`], work);
+  // The name and description show on AMO, where check:amo refuses "demo" (C27).
+  const ext = join(work, "ext-sample");
+  step("scaffold a repo with --extension", "node", [cli, "ext-sample", "--prefix", "ext", "--description", "An extension sample repo.", "--extension", "--foxkit", `file:${root}`], work);
   check("extension repo has no placeholder or marker", leftovers(ext).length === 0, leftovers(ext));
   step("pnpm install (extension)", "pnpm", ["install", "--no-frozen-lockfile"], ext);
   const ciLocal = step("pnpm ci:local (extension, with build:ext and web-ext lint)", "pnpm", ["ci:local"], ext);
   check("web-ext lint reports 0 errors and 0 warnings", /errors\s+0\b[\s\S]*warnings\s+0\b/.test(ciLocal.output));
+  check("check:amo passes the generated AMO listing (C27)", /amo-metadata\.json: the listing for "ext-sample" passes/.test(ciLocal.output));
+  check("dist-ext/ leaves out amo-metadata.json (C28)", existsSync(join(ext, "dist-ext", "manifest.json")) && !existsSync(join(ext, "dist-ext", "amo-metadata.json")));
+  const released = JSON.parse(readFileSync(join(ext, "dist-ext", "manifest.json"), "utf8"));
+  check("the release build has no content script for 127.0.0.1 and no e2e file (C29)", !released.content_scripts && !existsSync(join(ext, "dist-ext", "e2e-content.js")), released.content_scripts);
+  check("check:amo scans dist-ext/ and finds it clean (C29)", /dist-ext\/: no test-named files and no local host use without a reason/.test(ciLocal.output));
   step("pnpm e2e (extension, real Firefox)", "pnpm", ["e2e"], ext);
+  check("the e2e build has the E2E content script (C29)", existsSync(join(ext, "dist-e2e", "e2e-content.js")));
+  cpSync(join(ext, "dist-e2e"), join(ext, "dist-ext"), { recursive: true });
+  const leaked = step("check:amo refuses the e2e build in dist-ext/ (C29)", "pnpm", ["check:amo"], ext, 1);
+  check("the refusal names the local content script and the e2e file (C29)", leaked.output.includes('content script for "http://127.0.0.1/*"') && leaked.output.includes("dist-ext/e2e-content.js"), leaked.output.slice(-400));
+  step("pnpm build:ext (back to the release build)", "pnpm", ["build:ext"], ext);
   const artifacts = existsSync(join(ext, "artifacts")) ? readdirSync(join(ext, "artifacts")) : [];
   const inner = artifacts.length ? JSON.parse(readFileSync(join(ext, "artifacts", artifacts[0]), "utf8")) : null;
   record.extensionRepoArtifact = inner;
