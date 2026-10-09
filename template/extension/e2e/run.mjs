@@ -1,5 +1,6 @@
-// The E2E test: install extension/ in a real Firefox, check that it runs in a
-// page and stores a value, and write artifacts/e2e-<date>.json.
+// The E2E test: install the built extension (dist-ext/) in a real Firefox,
+// check that it runs in a page and stores a value, and write
+// artifacts/e2e-<date>.json.
 // Usage: pnpm e2e [--headed]. Env: FIREFOX (the Firefox binary).
 import { launch, poll, serve, writeArtifact } from "create-foxkit/e2e";
 
@@ -9,11 +10,11 @@ const check = (name, expected, actual) => record.checks.push({ name, expected, a
 const site = await serve("e2e/site");
 let fox;
 try {
-  fox = await launch({ extension: "extension", headless: !process.argv.includes("--headed") });
+  fox = await launch({ extension: "dist-ext", headless: !process.argv.includes("--headed") });
   record.firefox = await fox.browser.version();
   const page = await fox.open(`${site.url}/index.html`);
   check("content script ran in the page", "content-script-ran", await poll(page, () => document.documentElement.dataset.fixture));
-  const ext = await fox.openExtensionPage("page.html");
+  const ext = await fox.openExtensionPage("popup.html");
   check("background stored a value", "installed", await poll(ext, () => document.getElementById("value")?.textContent));
 } catch (error) {
   record.error = error instanceof Error ? error.message : String(error);

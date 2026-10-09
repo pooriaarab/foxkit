@@ -1,5 +1,5 @@
 {
-  "startedAt": "2026-10-09T03:00:37.194Z",
+  "startedAt": "2026-10-09T03:23:53.523Z",
   "node": "v25.9.0",
   "steps": [
     {
@@ -9,7 +9,7 @@
       "exitCode": 0,
       "expectedExit": 0,
       "ok": true,
-      "ms": 156
+      "ms": 153
     },
     {
       "name": "plain repo has no placeholder or marker",
@@ -27,7 +27,7 @@
       "exitCode": 0,
       "expectedExit": 0,
       "ok": true,
-      "ms": 1159
+      "ms": 1044
     },
     {
       "name": "pnpm ci:local (plain)",
@@ -36,7 +36,7 @@
       "exitCode": 0,
       "expectedExit": 0,
       "ok": true,
-      "ms": 4552
+      "ms": 4603
     },
     {
       "name": "scaffold a repo with --extension",
@@ -45,7 +45,7 @@
       "exitCode": 0,
       "expectedExit": 0,
       "ok": true,
-      "ms": 166
+      "ms": 229
     },
     {
       "name": "extension repo has no placeholder or marker",
@@ -59,16 +59,20 @@
       "exitCode": 0,
       "expectedExit": 0,
       "ok": true,
-      "ms": 2355
+      "ms": 3429
     },
     {
-      "name": "pnpm ci:local (extension)",
+      "name": "pnpm ci:local (extension, with build:ext and web-ext lint)",
       "command": "pnpm ci:local",
       "cwd": "ext-demo",
       "exitCode": 0,
       "expectedExit": 0,
       "ok": true,
-      "ms": 4320
+      "ms": 6906
+    },
+    {
+      "name": "web-ext lint reports 0 errors and 0 warnings",
+      "ok": true
     },
     {
       "name": "pnpm e2e (extension, real Firefox)",
@@ -77,7 +81,7 @@
       "exitCode": 0,
       "expectedExit": 0,
       "ok": true,
-      "ms": 3279
+      "ms": 4978
     },
     {
       "name": "extension repo artifact says passed",
@@ -88,14 +92,27 @@
       ]
     },
     {
-      "name": "harness reads the fixture's moz-extension page",
+      "name": "build:ext refuses a manifest version that differs from package.json",
+      "command": "pnpm build:ext",
+      "cwd": "ext-demo",
+      "exitCode": 1,
+      "expectedExit": 1,
+      "ok": true,
+      "ms": 784
+    },
+    {
+      "name": "the refusal names both versions",
+      "ok": true
+    },
+    {
+      "name": "harness reads the demo extension's popup page",
       "ok": true,
       "detail": "installed"
     },
     {
       "name": "close() deleted the profile, and a second close() did not throw",
       "ok": true,
-      "detail": "foxkit-profile-mJFfta"
+      "detail": "foxkit-profile-C1VyVs"
     },
     {
       "name": "refuse a directory that is not empty",
@@ -104,13 +121,13 @@
       "exitCode": 2,
       "expectedExit": 2,
       "ok": true,
-      "ms": 100
+      "ms": 115
     }
   ],
   "pnpm": "11.10.0",
-  "gitSha": "895b3f86bb0c2390d9077836bd2ea48ee29c198e",
+  "gitSha": "075aad684d60a04af846bd5eb44096beff9a3bff",
   "extensionRepoArtifact": {
-    "startedAt": "2026-10-09T03:00:51.280Z",
+    "startedAt": "2026-10-09T03:24:11.905Z",
     "checks": [
       {
         "name": "content script ran in the page",
@@ -130,5 +147,5 @@
   },
   "firefox": "firefox/157.0.1",
   "passed": true,
-  "finishedAt": "2026-10-09T03:00:57.031Z"
+  "finishedAt": "2026-10-09T03:24:19.716Z"
 }

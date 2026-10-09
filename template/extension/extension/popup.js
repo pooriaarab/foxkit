@@ -1,4 +1,4 @@
-// Shows the value that background.js stored, so the E2E test can read it.
+// The demo popup. Replace this with a small view that shows __NAME__ working.
 browser.storage.local.get("fixture").then(({ fixture }) => {
   document.getElementById("value").textContent = fixture ?? "missing";
 });
