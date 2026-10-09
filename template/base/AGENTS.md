@@ -67,7 +67,7 @@ tests/            tests for the failure modes in docs/failure-modes.md
 docs/failure-modes.md  every way the code can fail, written before the code
 .github/          CI, release, PR and issue standards
 <!-- foxkit:extension:start -->
-extension/        the demo extension that shows this repo working in Firefox
+extension/        the extension that shows this repo working in Firefox
 scripts/build-ext.mjs  bundles extension/ into dist-ext/ with esbuild
 e2e/run.mjs       the Firefox E2E test; writes artifacts/e2e-<date>.json
 <!-- foxkit:extension:end -->
@@ -99,8 +99,10 @@ the tests, then the code. Commit in that order.
 `v<version>` and creates a GitHub release.
 <!-- foxkit:extension:start -->
 
-After the npm publish, it signs `dist-ext/` with AMO on the unlisted channel
-and attaches the `.xpi` to the GitHub release. It needs the secrets
-`AMO_JWT_ISSUER` and `AMO_JWT_SECRET`. Keep the `version` in
-`extension/manifest.json` equal to the one in `package.json`.
+After the npm publish, it submits `dist-ext/` to AMO as a listed add-on,
+with the listing in `extension/amo-metadata.json`. AMO reviews the version
+before it signs it, so the GitHub release links to the listing and has no
+`.xpi`. It needs the secrets `AMO_JWT_ISSUER` and `AMO_JWT_SECRET`. Keep the
+`version` in `extension/manifest.json` equal to the one in `package.json`.
+`pnpm check:amo` checks the listing; it runs in `pnpm ci:local`.
 <!-- foxkit:extension:end -->

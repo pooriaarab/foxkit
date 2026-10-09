@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "__NAME__ demo",
+  "name": "__NAME__",
   "version": "0.1.0",
   "description": "__DESCRIPTION__",
+  "icons": { "48": "icons/icon-48.png", "96": "icons/icon-96.png", "128": "icons/icon-128.png" },
   "browser_specific_settings": {
     "gecko": {
       "id": "__NAME__@__OWNER__",
@@ -17,8 +18,9 @@
     "scripts": ["background.js"]
   },
   "action": {
-    "default_title": "__NAME__ demo",
-    "default_popup": "popup.html"
+    "default_title": "__NAME__",
+    "default_popup": "popup.html",
+    "default_icon": { "48": "icons/icon-48.png", "96": "icons/icon-96.png" }
   },
   "content_scripts": [
     {

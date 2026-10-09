@@ -66,12 +66,13 @@ With `--extension`, the repo also gets these:
 
 | Path | What it does |
 |---|---|
-| `extension/` | The demo extension: a Manifest V3 extension for Firefox with an `action` popup that the repo fills in to show its primitive. The gecko ID is `<name>@<owner>`, `strict_min_version` is `153.0`, and it declares `data_collection_permissions`. Its background script stores a value. Its content script marks each page on `127.0.0.1`. |
+| `extension/` | A Manifest V3 extension for Firefox with an `action` popup that the repo fills in to show its primitive. Its name and titles are the repo name, and it has 48, 96 and 128 px icons. The gecko ID is `<name>@<owner>`, `strict_min_version` is `153.0`, and it declares `data_collection_permissions`. Its background script stores a value. Its content script marks each page on `127.0.0.1`. |
 | `scripts/build-ext.mjs` | Bundles `extension/` into `dist-ext/` with esbuild. It stops when the manifest version is not the `package.json` version. |
 | `build:ext`, `lint:ext` scripts | `pnpm ci:local` also builds `dist-ext/` and runs `web-ext lint --warnings-as-errors` on it. |
+| `extension/amo-metadata.json`, `scripts/amo-listing.mjs`, `check:amo` script | The AMO listing: name, summary, description, category, MIT license, links and notes for reviewers. `pnpm ci:local` runs `check:amo`, which stops on a listing that AMO refuses, on "demo", "test" or "fixture" in text that users see, and on a manifest that declares data collection without a `privacy_policy`. Edit the description before the first release. |
 | `e2e/run.mjs`, `e2e/site/` | The E2E test. It installs `dist-ext/`, checks both values and writes `artifacts/e2e-<date>.json`. |
 | `e2e` script, `create-foxkit` dev dependency | `pnpm e2e` builds the extension and runs the test. |
-| Signing steps in `release.yml` | After the npm publish, `web-ext sign --channel=unlisted` signs `dist-ext/` with the `AMO_JWT_ISSUER` and `AMO_JWT_SECRET` secrets and uploads the `git archive` source for AMO review. The signed `.xpi` goes on the GitHub release. An empty secret stops the job with a clear error. |
+| AMO steps in `release.yml` | After the npm publish, `web-ext sign --channel=listed --amo-metadata` submits `dist-ext/` and the listing with the `AMO_JWT_ISSUER` and `AMO_JWT_SECRET` secrets, and uploads the `git archive` source for AMO review. A listed version waits for review, so web-ext runs with `--approval-timeout=0` and returns after the upload. `amo-listing.mjs after-submit` then sends the privacy policy (when there is one) and the listing icon. The GitHub release says "Submitted for AMO review" and links to the listing; it has no `.xpi`. An empty secret stops the job with a clear error. |
 | `pnpm-workspace.yaml` | Allows the esbuild build script, which pnpm 11 blocks by default. |
 | An `e2e` job in `ci.yml` | Installs Firefox with `browser-actions/setup-firefox` and runs `pnpm e2e`. |
 
@@ -81,7 +82,7 @@ All GitHub Actions are pinned to commit SHAs.
 
 | Who | What they build | How foxkit helps |
 |---|---|---|
-| A developer who starts a Firefox extension | An MV3 extension with tests from day one | `--extension` gives a demo extension, a Firefox E2E test that also runs in CI, and AMO signing on release. |
+| A developer who starts a Firefox extension | An MV3 extension with tests from day one | `--extension` gives an extension with an AMO listing, a Firefox E2E test that also runs in CI, and an AMO submission on release. |
 | The fox primitives maintainers | foxmind, foxpaw, foxgate and the other fox repos | Each repo starts with the same CI, release workflow and PR rules. |
 | An author of a small library for AI agents | A TypeScript package on npm | The release workflow publishes with provenance and refuses to publish a version twice. |
 | A team with an extension that has no browser tests | Firefox E2E tests in their own repo | `npm i -D create-foxkit`, then use `launch()` and `poll()` from `create-foxkit/e2e`. |
@@ -220,10 +221,15 @@ foxkit has a CLI (`create-foxkit`) and a library. It has no MCP server.
   both when the repo is yours.
 - The E2E library works with Firefox only. It is tested with Firefox 157 on
   macOS.
-- The E2E library installs temporary add-ons only. Signing happens only in
-  `release.yml`, and it has not run against AMO from this template yet.
-- The release signs the extension after the npm publish. If signing fails,
-  the npm version is already out, so fix the cause and bump the version.
+- The E2E library installs temporary add-ons only. The AMO submission
+  happens only in `release.yml`, and it has not run against AMO from this
+  template yet.
+- The release submits the extension after the npm publish. If the submission
+  fails, run the release again: it skips the npm publish when that version is
+  already on npm.
+- AMO reviews a listed version before it signs it. The release does not wait
+  for that review, so the signed file is on the AMO listing, not on the
+  GitHub release.
 - The release workflow needs the repository secret `NPM_TOKEN`. Without it,
   the publish step fails with a clear error.
 - `writeArtifact()` names files by UTC date, so a second run on the same day
