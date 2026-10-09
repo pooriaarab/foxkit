@@ -73,7 +73,7 @@ try {
   check("dist-ext/ leaves out amo-metadata.json (C28)", existsSync(join(ext, "dist-ext", "manifest.json")) && !existsSync(join(ext, "dist-ext", "amo-metadata.json")));
   const released = JSON.parse(readFileSync(join(ext, "dist-ext", "manifest.json"), "utf8"));
   check("the release build has no content script for 127.0.0.1 and no e2e file (C29)", !released.content_scripts && !existsSync(join(ext, "dist-ext", "e2e-content.js")), released.content_scripts);
-  check("check:amo scans dist-ext/ and finds it clean (C29)", /dist-ext\/: no test-only files or local content scripts/.test(ciLocal.output));
+  check("check:amo scans dist-ext/ and finds it clean (C29)", /dist-ext\/: no test-named files and no local host use without a reason/.test(ciLocal.output));
   step("pnpm e2e (extension, real Firefox)", "pnpm", ["e2e"], ext);
   check("the e2e build has the E2E content script (C29)", existsSync(join(ext, "dist-e2e", "e2e-content.js")));
   cpSync(join(ext, "dist-e2e"), join(ext, "dist-ext"), { recursive: true });
