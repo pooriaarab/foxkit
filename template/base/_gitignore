@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tgz
+.DS_Store
+# foxkit:extension:start
+dist-ext/
+web-ext-artifacts/
+source.zip
+# foxkit:extension:end
