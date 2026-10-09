@@ -31,8 +31,8 @@ refuse bad input before it writes anything.
 
 | # | Failure mode | Wanted behaviour | Test |
 |---|---|---|---|
-| C16 | A repo made without `--extension` gets the fixture, the `e2e` script, or the E2E CI job. | It gets none of them. | `tests/cli.test.ts` |
-| C17 | A repo made with `--extension` lacks the fixture, the `e2e` script, the `create-foxkit` dev dependency, or the E2E CI job. | It has all four. | `tests/cli.test.ts` |
+| C16 | A repo made without `--extension` gets the demo extension, the `e2e` script, or the E2E CI job. | It gets none of them. | `tests/cli.test.ts` |
+| C17 | A repo made with `--extension` lacks the demo extension, the `e2e` script, the `create-foxkit` dev dependency, or the E2E CI job. | It has all four. | `tests/cli.test.ts` |
 | C18 | A `foxkit:extension` marker line stays in a generated file. | No file holds a marker. An unclosed marker in the template stops the command before it writes. | `tests/cli.test.ts` |
 | C19 | The extension's gecko ID breaks the MDN rules: the pattern `^[a-zA-Z0-9-._]*@[a-zA-Z0-9-._]+$`, at most 80 characters. | The ID is `<name>@<owner>`. When it is longer than 80 characters, exit 2 and write nothing. | `tests/cli.test.ts` |
 | C20 | `--foxkit` is given without `--extension`, so it does nothing. | Exit 2. Write nothing. Without `--foxkit`, the dev dependency is `^<this create-foxkit version>`. | `tests/cli.test.ts` |

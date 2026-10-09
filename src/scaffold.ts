@@ -94,6 +94,8 @@ function validate(o: Partial<Options>): Options {
   const owner = o.owner ?? "pooriaarab";
   if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(owner)) throw new UsageError(`Owner "${owner}" is not a valid GitHub name.`);
   const extension = o.extension === true;
+  // MDN: a gecko ID has at most 80 characters.
+  if (extension && `${name}@${owner}`.length > 80) throw new UsageError(`The extension ID ${name}@${owner} is longer than 80 characters. Use a shorter name or owner.`);
   if (o.foxkit !== undefined && !extension) throw new UsageError("--foxkit has an effect only with --extension.");
   if (o.foxkit !== undefined && !o.foxkit.trim()) throw new UsageError("--foxkit is empty.");
   const own = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { version: string };
@@ -176,8 +178,11 @@ export async function run(argv: string[], io: Io): Promise<number> {
     if (options.extension) {
       render(join(TEMPLATE, "extension"), placeholders(options), true, files);
       const pkg = JSON.parse(files.get("package.json") ?? "{}");
-      pkg.scripts.e2e = "node e2e/run.mjs";
-      pkg.devDependencies["create-foxkit"] = options.foxkit;
+      pkg.scripts["build:ext"] = "node scripts/build-ext.mjs";
+      pkg.scripts["lint:ext"] = "web-ext lint -s dist-ext --warnings-as-errors";
+      pkg.scripts["ci:local"] += " && pnpm build:ext && pnpm lint:ext";
+      pkg.scripts.e2e = "pnpm build:ext && node e2e/run.mjs";
+      Object.assign(pkg.devDependencies, { "create-foxkit": options.foxkit, esbuild: "^0.28.2", "web-ext": "^10.7.0" });
       files.set("package.json", `${JSON.stringify(pkg, null, 2)}\n`);
     }
   } catch (error) {

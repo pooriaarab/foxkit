@@ -2,16 +2,18 @@
 // user does and writes artifacts/e2e-<date>.json with every step and result.
 //
 //   1. Scaffold a plain repo, then pnpm install and pnpm ci:local in it.
-//   2. Scaffold a repo with --extension, then pnpm install, pnpm ci:local and
-//      pnpm e2e in it. pnpm e2e starts a real Firefox with the fixture.
-//   3. Drive the fixture through dist/e2e.js directly, and check that close()
+//   2. Scaffold a repo with --extension, then pnpm install, pnpm ci:local (it
+//      builds dist-ext/ and runs web-ext lint) and pnpm e2e in it. pnpm e2e
+//      starts a real Firefox with the demo extension. A manifest version that
+//      differs from package.json must stop build:ext (C23).
+//   3. Drive dist-ext/ through dist/e2e.js directly, and check that close()
 //      deletes the profile and that a second close() does nothing (H6).
 //   4. Run create-foxkit on a directory that is not empty; it must exit 2.
 //
 // Usage: pnpm e2e (it builds first). Env: FIREFOX (the Firefox binary).
 // Firefox cannot start inside a sandbox that blocks it.
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -64,20 +66,28 @@ try {
   step("scaffold a repo with --extension", "node", [cli, "ext-demo", "--prefix", "ext", "--description", "An extension demo repo.", "--extension", "--foxkit", `file:${root}`], work);
   check("extension repo has no placeholder or marker", leftovers(ext).length === 0, leftovers(ext));
   step("pnpm install (extension)", "pnpm", ["install", "--no-frozen-lockfile"], ext);
-  step("pnpm ci:local (extension)", "pnpm", ["ci:local"], ext);
+  const ciLocal = step("pnpm ci:local (extension, with build:ext and web-ext lint)", "pnpm", ["ci:local"], ext);
+  check("web-ext lint reports 0 errors and 0 warnings", /errors\s+0\b[\s\S]*warnings\s+0\b/.test(ciLocal.output));
   step("pnpm e2e (extension, real Firefox)", "pnpm", ["e2e"], ext);
   const artifacts = existsSync(join(ext, "artifacts")) ? readdirSync(join(ext, "artifacts")) : [];
   const inner = artifacts.length ? JSON.parse(readFileSync(join(ext, "artifacts", artifacts[0]), "utf8")) : null;
   record.extensionRepoArtifact = inner;
   check("extension repo artifact says passed", inner?.passed === true, inner?.checks?.map((c) => `${c.name}: ${c.actual}`));
 
+  const pkgFile = join(ext, "package.json");
+  const pkgText = readFileSync(pkgFile, "utf8");
+  writeFileSync(pkgFile, pkgText.replace('"version": "0.1.0"', '"version": "0.2.0"'));
+  const mismatch = step("build:ext refuses a manifest version that differs from package.json", "pnpm", ["build:ext"], ext, 1);
+  check("the refusal names both versions", mismatch.output.includes("0.1.0") && mismatch.output.includes("0.2.0"));
+  writeFileSync(pkgFile, pkgText);
+
   // 3. The harness from this build, against the generated fixture.
-  const fox = await launch({ extension: join(ext, "extension") });
+  const fox = await launch({ extension: join(ext, "dist-ext") });
   try {
     record.firefox = await fox.browser.version();
-    const page = await fox.openExtensionPage("page.html");
+    const page = await fox.openExtensionPage("popup.html");
     const value = await poll(page, () => document.getElementById("value")?.textContent);
-    check("harness reads the fixture's moz-extension page", value === "installed", value);
+    check("harness reads the demo extension's popup page", value === "installed", value);
   } finally {
     await fox.close();
     await fox.close();
