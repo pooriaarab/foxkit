@@ -37,18 +37,24 @@ refuse bad input before it writes anything.
 | C19 | The extension's gecko ID breaks the MDN rules: the pattern `^[a-zA-Z0-9-._]*@[a-zA-Z0-9-._]+$`, at most 80 characters. | The ID is `<name>@<owner>`. When it is longer than 80 characters, exit 2 and write nothing. | `tests/cli.test.ts` |
 | C20 | `--foxkit` is given without `--extension`, so it does nothing. | Exit 2. Write nothing. Without `--foxkit`, the dev dependency is `^<this create-foxkit version>`. | `tests/cli.test.ts` |
 
-## The signed demo extension (`--extension`)
+## The listed extension (`--extension`)
 
-Every fox repo ships a demo extension. AMO signs it, and the GitHub release
-carries the `.xpi`.
+Every fox repo ships an extension that shows its primitive. The release
+submits it to AMO as a listed add-on, and the GitHub release links to the
+listing.
 
 | # | Failure mode | Wanted behaviour | Test |
 |---|---|---|---|
 | C21 | The manifest breaks a Firefox fact from the BRIEF: no `strict_min_version` of `153.0`, no `data_collection_permissions`, or no page to show the primitive. | The manifest has all three. The page is an `action` popup. | `tests/cli.test.ts` |
 | C22 | `ci:local` does not build the extension or does not run `web-ext lint`, so a broken extension passes CI. | `ci:local` runs `build:ext` (esbuild to `dist-ext/`) and `lint:ext` (`web-ext lint`). | `tests/cli.test.ts`; `scripts/e2e.mjs` runs it |
 | C23 | The manifest version differs from the `package.json` version, so AMO signs one version and npm publishes another. | `build:ext` exits 1 and names both versions. `release.yml` runs it through `ci:local`. | `scripts/e2e.mjs` changes the version and expects exit 1 |
-| C24 | `release.yml` publishes without signing, signs with an empty secret, sends no source to AMO, or makes a release with no `.xpi`. | The extension variant signs with `web-ext sign --channel=unlisted`, fails when `AMO_JWT_ISSUER` or `AMO_JWT_SECRET` is empty, uploads `git archive` source, and attaches the `.xpi`. A plain repo has no signing step. | `tests/cli.test.ts` |
+| C24 | `release.yml` publishes without an AMO submission, submits with an empty secret, sends no source or no listing, waits for an AMO review that takes days, or reports success when web-ext did not submit. | The extension variant runs `web-ext sign --channel=listed --amo-metadata` with `--approval-timeout=0`, fails when `AMO_JWT_ISSUER` or `AMO_JWT_SECRET` is empty, uploads `git archive` source, fails unless web-ext logs that it skipped the wait for approval, and makes a GitHub release that says "Submitted for AMO review" with no `.xpi`. A plain repo has no AMO step. | `tests/cli.test.ts` |
 | C25 | Build output (`dist-ext/`, `web-ext-artifacts/`) gets committed. | `.gitignore` lists both in the extension variant. | `tests/cli.test.ts` |
+| C26 | A PNG icon goes through the text renderer and comes out broken, or the manifest has no 48, 96 or 128 px icon. | Files that are not text are copied byte for byte. The manifest names `icons/icon-48.png`, `icon-96.png` and `icon-128.png`, and the action uses them. | `tests/cli.test.ts` |
+| C27 | The AMO listing is missing, breaks an AMO rule, or a user sees "demo" in the add-on name, the action title or the popup title. | The repo has `extension/amo-metadata.json` and `scripts/amo-listing.mjs`. `ci:local` runs `check:amo`, which checks the listing and the manifest. The name and titles are the repo name. | `tests/cli.test.ts`; `scripts/e2e.mjs` runs `ci:local` |
+| C28 | `amo-metadata.json` ships inside the add-on. | `build:ext` leaves it out of `dist-ext/`. | `scripts/e2e.mjs` |
+| C29 | The release build (`dist-ext/`, which `release.yml` signs) holds a test-only piece: the content script for `127.0.0.1` that the E2E test uses, or a file named for tests. AMO policy 6.3 and "function only as described" reject it. | The E2E content script lives in `e2e/extension/` and only `build-ext.mjs --e2e` adds it, to `dist-e2e/`. The `e2e` script builds and runs `dist-e2e/`. `dist-ext/` has no content script. `check:amo` stops when `dist-ext/` has a content script or host permission for a local host (without a reason in `local_hosts` for that pattern and that use, so a host-permission reason cannot clear a test content script; a reason for a use the build lacks also stops it), or a file named `e2e`, `fixture`, `test` or `spec`. | `tests/cli.test.ts`; `scripts/e2e.mjs` copies `dist-e2e/` over `dist-ext/` and expects `check:amo` to exit 1 |
+| C30 | AMO accepted a listed upload, then the GitHub release step failed. A re-run sends the same version again, and AMO refuses it, so the release never finishes. | The submit step runs `amo-listing.mjs version-status` first. When AMO has the version as listed, it skips `web-ext sign` and the release step still runs. When AMO has it as unlisted, or the lookup fails, the step stops. | `tests/cli.test.ts` |
 
 ## The E2E harness (`create-foxkit/e2e`)
 
