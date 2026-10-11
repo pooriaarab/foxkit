@@ -9,7 +9,9 @@
 //   namespaces the frame lacks and the manifest grants (F1) with calls to
 //   the background page over a port.
 // - foxkit-relay.js, a background script: it runs those calls (F2) for this
-//   extension's pages framed on the frame host only (F3).
+//   extension's pages framed on the frame host only (F3). Calls about "my
+//   tab" answer for the frame, and a host tab shows the framed URL (F7).
+// A granted namespace the relay does not cover throws (F6).
 // docs/failure-modes.md F1-F5.
 import type { Frame, Page } from "puppeteer-core";
 
@@ -21,12 +23,16 @@ export const RELAY_PORT = "foxkit-relay";
 const ALWAYS = ["tabs", "windows", "permissions"];
 const BY_KEY: Record<string, string> = { action: "action", sidebar_action: "sidebarAction", browser_action: "browserAction", page_action: "pageAction" };
 const RELAYED_PERMISSIONS = ["alarms", "bookmarks", "browsingData", "contextualIdentities", "cookies", "downloads", "history", "notifications", "scripting", "sessions", "topSites", "webNavigation"];
+/** Permission names that are not a namespace, or that a framed page already has. */
+const NOT_NAMESPACES = new Set(["storage", "unlimitedStorage", "activeTab", "webRequestBlocking", "nativeMessaging", "menus", "contextMenus", "clipboardRead", "clipboardWrite", "geolocation", "background", "declarativeNetRequestWithHostAccess", "declarativeNetRequestFeedback", "tabHide", "mozillaAddons"]);
 /** Constants a page reads without a call. */
 const CONSTANTS: Record<string, Record<string, number>> = { tabs: { TAB_ID_NONE: -1 }, windows: { WINDOW_ID_NONE: -1, WINDOW_ID_CURRENT: -2 } };
 
 export interface FramePlan {
   /** Namespaces the shim fills with relayed calls. */
   relayed: string[];
+  /** Granted namespaces the shim does not relay: they throw on access (F6). */
+  blocked: string[];
 }
 
 interface Manifest {
@@ -35,20 +41,24 @@ interface Manifest {
   [key: string]: unknown;
 }
 
-/** Which namespaces the frame shim relays, from the manifest (F1). */
+/** Which namespaces the frame shim relays (F1) and which it blocks (F6), from the manifest. */
 export function framePlan(manifest: Manifest): FramePlan {
   const relayed = new Set(ALWAYS);
   for (const [key, ns] of Object.entries(BY_KEY)) if (manifest[key]) relayed.add(ns);
+  const blocked = new Set<string>();
   for (const permission of [...(manifest.permissions ?? []), ...(manifest.optional_permissions ?? [])]) {
-    if (typeof permission === "string" && RELAYED_PERMISSIONS.includes(permission)) relayed.add(permission);
+    if (typeof permission !== "string" || NOT_NAMESPACES.has(permission)) continue;
+    if (RELAYED_PERMISSIONS.includes(permission)) relayed.add(permission);
+    else blocked.add(permission);
   }
-  return { relayed: [...relayed].toSorted() };
+  for (const ns of relayed) blocked.delete(ns);
+  return { relayed: [...relayed].toSorted(), blocked: [...blocked].toSorted() };
 }
 
 /** foxkit-frame.js for this manifest and the frame host URL. */
 export function shimScript(plan: FramePlan, hostUrl: string): string {
-  const config = JSON.stringify({ host: new URL(hostUrl).origin, port: RELAY_PORT, relayed: plan.relayed, constants: CONSTANTS });
-  return `// Added by create-foxkit/e2e in remote mode only (docs/failure-modes.md F1-F3).
+  const config = JSON.stringify({ host: new URL(hostUrl).origin, port: RELAY_PORT, relayed: plan.relayed, blocked: plan.blocked, constants: CONSTANTS });
+  return `// Added by create-foxkit/e2e in remote mode only (docs/failure-modes.md F1-F3, F6).
 (() => {
   const C = ${config};
   if (window.top === window || typeof browser !== "object") return;
@@ -109,6 +119,16 @@ export function shimScript(plan: FramePlan, hostUrl: string): string {
     });
   };
   for (const ns of C.relayed) if (!(ns in browser)) browser[ns] = namespace(ns);
+  for (const ns of C.blocked) {
+    if (ns in browser) continue;
+    Object.defineProperty(browser, ns, { configurable: true, get() { throw fail("browser." + ns + " is granted but not relayed into a framed page. Run this check locally, or add the namespace to create-foxkit's frame relay."); } });
+  }
+  if (browser.extension && typeof browser.extension.getViews !== "function") {
+    browser.extension.getViews = (filter = {}) => {
+      if (filter && (filter.type === "sidebar" || filter.type === "popup") && Object.keys(filter).length === 1) return [];
+      throw fail("extension.getViews() answers only { type: \\"sidebar\\" } and { type: \\"popup\\" } in a framed page.");
+    };
+  }
 })();
 `;
 }
@@ -120,6 +140,28 @@ export function relayScript(plan: FramePlan, hostUrl: string): string {
 (() => {
   const C = ${config};
   const base = browser.runtime.getURL("");
+  const GESTURE = /user input handler|user action|user gesture/i;
+  // F7: each frame host tab stands for the extension page framed in it.
+  const framed = new Map();
+  const asFramed = (value) => {
+    if (Array.isArray(value)) return value.map(asFramed);
+    if (!value || typeof value !== "object") return value;
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = asFramed(v);
+    if (typeof out.id === "number" && typeof out.url === "string" && framed.has(out.id)) out.url = framed.get(out.id);
+    return out;
+  };
+  // F7: calls that mean "my tab" or "my window" answer for the sender.
+  const inContext = (m, sender) => {
+    const tab = sender.tab;
+    if (m.ns === "tabs" && m.member === "getCurrent") return () => Promise.resolve(tab);
+    if (m.ns === "windows" && m.member === "getCurrent") return (info) => browser.windows.get(tab.windowId, info);
+    if (m.ns === "tabs" && m.member === "query" && m.args[0] && m.args[0].currentWindow === true) {
+      const { currentWindow, ...rest } = m.args[0];
+      return () => browser.tabs.query({ ...rest, windowId: tab.windowId });
+    }
+    return undefined;
+  };
   const allowed = (sender) => {
     try {
       return sender.id === browser.runtime.id && String(sender.url).startsWith(base) && sender.frameId !== 0 && sender.tab && String(sender.tab.url).startsWith(C.host + "/");
@@ -135,7 +177,11 @@ export function relayScript(plan: FramePlan, hostUrl: string): string {
       return;
     }
     const off = [];
-    port.onDisconnect.addListener(() => off.splice(0).forEach((fn) => fn()));
+    framed.set(port.sender.tab.id, port.sender.url);
+    port.onDisconnect.addListener(() => {
+      if (framed.get(port.sender.tab.id) === port.sender.url) framed.delete(port.sender.tab.id);
+      off.splice(0).forEach((fn) => fn());
+    });
     port.onMessage.addListener(async (m) => {
       const name = "browser." + m.ns + "." + m.member;
       try {
@@ -143,16 +189,18 @@ export function relayScript(plan: FramePlan, hostUrl: string): string {
         const target = browser[m.ns] && browser[m.ns][m.member];
         if (m.sub) {
           if (!target || typeof target.addListener !== "function") throw new Error(name + " is not an event in this Firefox.");
-          const fn = (...args) => port.postMessage({ event: m.sub, args });
+          const fn = (...args) => port.postMessage({ event: m.sub, args: asFramed(args) });
           target.addListener(fn, ...(m.extra || []));
           off.push(() => target.removeListener(fn));
           port.postMessage({ id: m.id, value: true });
         } else if (m.call) {
           if (typeof target !== "function") throw new Error(name + " is not a function in this Firefox.");
-          port.postMessage({ id: m.id, value: await target.apply(browser[m.ns], m.args) });
+          const run = inContext(m, port.sender) || ((...args) => target.apply(browser[m.ns], args));
+          port.postMessage({ id: m.id, value: asFramed(await run(...m.args)) });
         }
       } catch (error) {
-        port.postMessage({ id: m.id, error: error instanceof Error ? error.message : String(error) });
+        const text = error instanceof Error ? error.message : String(error);
+        port.postMessage({ id: m.id, error: GESTURE.test(text) ? name + " needs a user gesture, and a relayed call has none: " + text : text });
       }
     });
   });

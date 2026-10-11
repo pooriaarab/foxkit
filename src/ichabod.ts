@@ -9,6 +9,8 @@
 //   open, script or capture moz-extension: pages in a tab, and preferences
 //   cannot be set. It can script an extension page in an iframe on an https
 //   page; src/frame.ts uses that. webExtension.install takes base64 data only.
+// - When all sessions are in use, the WebSocket opens and the BiDi handshake
+//   never answers (R9).
 // - The BiDi session.new result carries the session ID; nothing else does.
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -140,6 +142,46 @@ export interface RemoteOptions {
   prefs?: Record<string, unknown>;
   /** The frame host URL, or a promise of it. connectIchabod waits for it before the install. */
   host: string | Promise<string>;
+  /** The limit for one connect attempt (R9). Default: 45000. */
+  connectTimeoutMs?: number;
+  /** The wait before the next attempt, times the attempt number. Default: 2000. */
+  retryDelayMs?: number;
+}
+
+const CONNECT_TRIES = 3;
+
+/** Open the WebSocket and the BiDi session. Each attempt has a time limit; a failed attempt closes its socket (R9). */
+async function connectOnce(endpoint: string, key: string, timeoutMs: number): Promise<{ browser: Browser; ws: WebSocket; sessionId: () => string }> {
+  let sessionId = "";
+  const ws = new WebSocket(endpoint, { headers: { authorization: `Basic ${Buffer.from(`api:${key}`).toString("base64")}` } } as unknown as string[]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const limit = new Promise<never>((_, fail) => {
+    timer = setTimeout(() => fail(new Error(`Ichabod did not finish the connection in ${timeoutMs / 1000} s.`)), timeoutMs);
+  });
+  try {
+    const attempt = (async () => {
+      await new Promise<void>((done, fail) => {
+        ws.addEventListener("open", () => done());
+        ws.addEventListener("error", (event) => fail(new Error(`Cannot connect to Ichabod at ${endpoint}: ${(event as ErrorEvent).message || "the connection failed"}.`)));
+      });
+      const transport: ConnectionTransport = { send: (message) => ws.send(message), close: () => ws.close() };
+      ws.addEventListener("message", (event) => {
+        const message = String(event.data);
+        if (!sessionId && message.includes('"sessionId"')) sessionId = (JSON.parse(message) as { result?: { sessionId?: string } }).result?.sessionId ?? "";
+        transport.onmessage?.(message);
+      });
+      ws.addEventListener("close", () => transport.onclose?.());
+      return puppeteer.connect({ transport, protocol: "webDriverBiDi", defaultViewport: null });
+    })();
+    attempt.catch(() => {});
+    const browser = await Promise.race([attempt, limit]);
+    return { browser, ws, sessionId: () => sessionId };
+  } catch (error) {
+    ws.close();
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** The checks before anything starts: options Ichabod cannot apply (R3), and the key (R2). Returns the key. */
@@ -167,22 +209,21 @@ export async function connectIchabod(options: RemoteOptions): Promise<{ browser:
       ws?.close();
     })());
   try {
-    let sessionId = "";
-    ws = new WebSocket(endpoint, { headers: { authorization: `Basic ${Buffer.from(`api:${key}`).toString("base64")}` } } as unknown as string[]);
-    const socket = ws;
-    await new Promise<void>((done, fail) => {
-      socket.addEventListener("open", () => done());
-      socket.addEventListener("error", (event) => fail(new Error(`Cannot connect to Ichabod at ${endpoint}: ${(event as ErrorEvent).message || "the connection failed"}.`)));
-    });
-    const transport: ConnectionTransport = { send: (message) => socket.send(message), close: () => socket.close() };
-    socket.addEventListener("message", (event) => {
-      const message = String(event.data);
-      if (!sessionId && message.includes('"sessionId"')) sessionId = (JSON.parse(message) as { result?: { sessionId?: string } }).result?.sessionId ?? "";
-      transport.onmessage?.(message);
-    });
-    socket.addEventListener("close", () => transport.onclose?.());
-    browser = await puppeteer.connect({ transport, protocol: "webDriverBiDi", defaultViewport: null });
-    remoteSessions.push({ service: "ichabod", sessionId, firefox: await browser.version(), recorded: record, startedAt: new Date().toISOString() });
+    let sessionId: () => string = String;
+    const errors: unknown[] = [];
+    for (let attempt = 1; !browser; attempt++) {
+      try {
+        ({ browser, ws, sessionId } = await connectOnce(endpoint, key, options.connectTimeoutMs ?? 45_000));
+      } catch (error) {
+        errors.push(error);
+        if (attempt === CONNECT_TRIES) {
+          const text = errors.map((e) => (e instanceof Error ? e.message : String(e))).join("\n");
+          throw new Error(`Cannot start an Ichabod session in ${CONNECT_TRIES} tries. Ichabod allows few sessions at once, so it may be busy: try again later. The errors:\n${text}`, { cause: error });
+        }
+        await new Promise((done) => setTimeout(done, (options.retryDelayMs ?? 2000) * attempt));
+      }
+    }
+    remoteSessions.push({ service: "ichabod", sessionId: sessionId(), firefox: await browser.version(), recorded: record, startedAt: new Date().toISOString() });
     // Puppeteer types connection for CDP only; on BiDi it sends raw BiDi commands.
     const bidi = (browser as unknown as { connection: { send(method: string, params: object): Promise<{ result: unknown }> } }).connection;
     const send = (method: string, params: object) => bidi.send(method, params);
