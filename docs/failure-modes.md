@@ -72,3 +72,21 @@ listing.
 | H9 | `serve()` gets a path for a file that does not exist. | It answers 404. | `tests/e2e.test.ts` |
 | H10 | `writeArtifact()` gets a directory that does not exist, or writes a file name that changes on each run of the same day. | It creates the directory. It writes `<name>-<YYYY-MM-DD>.json` with valid JSON. | `tests/e2e.test.ts` |
 | H11 | A function given to `page.evaluate()` uses a variable from outside it. | Nothing can catch this at run time: the function runs in the page, without its closure. The README says to pass values as arguments. | README |
+
+## Tunnels and FOXKIT_BROWSER
+
+`FOXKIT_BROWSER=ichabod` runs a test on Ichabod, Mozilla's cloud browser
+service. A cloud browser cannot reach `127.0.0.1`, so `serve()` and
+`tunnel()` give a local server a public URL. All of them share one
+Cloudflare quick tunnel: it points at a local gateway, and each server is
+mounted at `/_foxkit/<id>/`. The tunnel makes local servers public, so its
+lifetime and its routes are the risks here.
+
+| # | Failure mode | Wanted behaviour | Test |
+|---|---|---|---|
+| R1 | `FOXKIT_BROWSER` has a value that is not `ichabod` or `local`, for example `ichabod ` or `ichbod`. The test runs on the local Firefox and nobody sees it. | `serve()` and `tunnel()` throw an error that names the value and the two allowed values. They start nothing. | `tests/tunnel.test.ts` |
+| T1 | `cloudflared` is not installed. | `tunnel()` throws an error that names `brew install cloudflared` and the `CLOUDFLARED` variable. | `tests/tunnel.test.ts` |
+| T2 | The quick tunnel starts slowly or fails: no URL, a URL that does not resolve yet, or Cloudflare error 530. | `tunnel()` waits until a request through the tunnel gets an answer from the gateway. It asks the `trycloudflare.com` name servers, because a caching resolver asked too early keeps a "no such host" answer for minutes. It tries 3 times, then throws with the end of the `cloudflared` output. | `tests/tunnel.test.ts` (a fake `cloudflared`) |
+| T3 | A tunnel keeps a local server public after `close()`, after a failed start, or after the test process stops. Or the tunnel keeps the process from exiting. | `close()` unmounts the server, and its URL answers 404 at once. A failed start stops `cloudflared`. The shared `cloudflared` does not keep the process alive; the process exit, or `closeTunnels()`, stops it, and `closeTunnels()` returns. | `tests/tunnel.test.ts`; `scripts/e2e-ichabod.mjs` ends on `closeTunnels()` |
+| T4 | A run opens one quick tunnel per server. Cloudflare refuses quick tunnels with 429 after about 15 in a short time, so the run fails, and so do runs after it for an hour or more. | The tunnel count per process is at most 1: every `tunnel()` and `serve()` mounts on the one shared tunnel. | `tests/tunnel.test.ts` counts `cloudflared` starts |
+| T5 | A page under a mount uses an absolute path (`/app.js`) or redirects to one, and misses its server. Or a request with no mount reaches a local server. | The gateway strips `/_foxkit/<id>` before it forwards. A request without the prefix goes to the mount that its `Referer` names. A `Location` of `/path` or `http://127.0.0.1:<port>/path` gets the public prefix. Any other request gets 404. All mounts share one origin. | `tests/tunnel.test.ts` |
