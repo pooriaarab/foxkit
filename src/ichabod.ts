@@ -6,13 +6,15 @@
 // - The key goes in a Basic Authorization header (user "api"). It never goes
 //   in a URL, because Puppeteer copies the endpoint URL into some errors.
 // - Its Firefox runs without -remote-allow-system-access, so BiDi cannot
-//   open, script or capture moz-extension: pages, and preferences cannot be
-//   set. webExtension.install takes the extension only as base64 data.
+//   open, script or capture moz-extension: pages in a tab, and preferences
+//   cannot be set. It can script an extension page in an iframe on an https
+//   page; src/frame.ts uses that. webExtension.install takes base64 data only.
 // - The BiDi session.new result carries the session ID; nothing else does.
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { crc32, deflateRawSync } from "node:zlib";
 import puppeteer, { type Browser, type ConnectionTransport } from "puppeteer-core";
+import { framePlan, injectShim, RELAY_SCRIPT, relayScript, SHIM_SCRIPT, shimScript } from "./frame.js";
 
 /** What writeArtifact() records about each remote session (R8). */
 export interface RemoteSession {
@@ -92,21 +94,40 @@ function zip(entries: Array<[string, Buffer]>): Buffer {
 }
 
 /**
- * The extension as a zip, with one more background script that opens
- * foxkit-uuid.html once at install, so launch() can read the UUID (R6).
- * The directory does not change.
+ * The extension as a zip, as remote mode installs it. The directory does not change.
+ * - One background script opens foxkit-uuid.html once at install, so
+ *   launch() can read the UUID (R6).
+ * - The frame host pieces (src/frame.ts): the extension pages are web
+ *   accessible to the tunnel origin only, each page but a sandbox page loads
+ *   the frame shim first, and the relay is a background script (F1-F3).
  */
-export function remoteExtensionZip(dir: string): Buffer {
-  const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")) as { background?: { scripts?: string[]; page?: string } };
-  if (manifest.background?.page) throw new Error(`${join(dir, "manifest.json")} uses background.page. Remote mode adds a background script to find the extension UUID; use background.scripts.`);
-  manifest.background = { ...manifest.background, scripts: [...(manifest.background?.scripts ?? []), UUID_SCRIPT] };
-  const entries: Array<[string, Buffer]> = files(dir)
-    .filter((name) => name !== "manifest.json")
-    .map((name) => [name, readFileSync(join(dir, name))]);
+export function remoteExtensionZip(dir: string, hostUrl: string): Buffer {
+  const file = join(dir, "manifest.json");
+  const manifest = JSON.parse(readFileSync(file, "utf8")) as {
+    manifest_version?: number;
+    background?: { scripts?: string[]; page?: string };
+    sandbox?: { pages?: string[] };
+    web_accessible_resources?: unknown[];
+  };
+  if (manifest.background?.page) throw new Error(`${file} uses background.page. Remote mode adds background scripts; use background.scripts.`);
+  if (manifest.manifest_version !== 3) throw new Error(`${file} is not Manifest V3. Remote mode limits the extension pages to the frame host origin, and only Manifest V3 can do that.`);
+  if (!/^https:\/\/[a-z0-9.-]+(\/[\w./-]*)?$/.test(hostUrl)) throw new Error(`The frame host must be an https URL, not ${JSON.stringify(hostUrl)}.`);
+  const plan = framePlan(manifest as Record<string, unknown>);
+  const sandboxed = new Set(manifest.sandbox?.pages ?? []);
+  const names = files(dir).filter((name) => name !== "manifest.json");
+  const pages = names.filter((name) => name.endsWith(".html") && !sandboxed.has(name));
+  manifest.background = { ...manifest.background, scripts: [...(manifest.background?.scripts ?? []), UUID_SCRIPT, RELAY_SCRIPT] };
+  manifest.web_accessible_resources = [...(manifest.web_accessible_resources ?? []), { resources: pages, matches: [`${new URL(hostUrl).origin}/*`] }];
+  const entries: Array<[string, Buffer]> = names.map((name) => {
+    const data = readFileSync(join(dir, name));
+    return [name, pages.includes(name) ? Buffer.from(injectShim(data.toString("utf8"))) : data];
+  });
   entries.push(
     ["manifest.json", Buffer.from(JSON.stringify(manifest, null, 2))],
     [UUID_SCRIPT, Buffer.from(`// Added by create-foxkit/e2e in remote mode. The test reads the UUID from this tab, then closes it.\nbrowser.runtime.onInstalled.addListener(() => browser.tabs.create({ url: browser.runtime.getURL("${UUID_PAGE}"), active: false }));\n`)],
     [UUID_PAGE, Buffer.from('<!doctype html><meta charset="utf-8"><title>foxkit</title>\n')],
+    [SHIM_SCRIPT, Buffer.from(shimScript(plan, hostUrl))],
+    [RELAY_SCRIPT, Buffer.from(relayScript(plan, hostUrl))],
   );
   return zip(entries);
 }
@@ -117,18 +138,25 @@ export interface RemoteOptions {
   firefox?: string;
   headless?: boolean;
   prefs?: Record<string, unknown>;
+  /** The frame host URL, or a promise of it. connectIchabod waits for it before the install. */
+  host: string | Promise<string>;
 }
 
-/** Connect to Ichabod, install the extension, and find its UUID. */
-export async function connectIchabod(options: RemoteOptions): Promise<{ browser: Browser; base: string; close: () => Promise<void> }> {
+/** The checks before anything starts: options Ichabod cannot apply (R3), and the key (R2). Returns the key. */
+export function checkRemote(options: Omit<RemoteOptions, "host" | "extension">): string {
   for (const [name, set] of [["prefs", options.prefs !== undefined], ["firefox", options.firefox !== undefined], ["headless", options.headless === false]] as const) {
     if (set) throw new Error(`Ichabod cannot apply the ${name} option: it runs its own headless Firefox and cannot set preferences. Remove the option, or run locally (FOXKIT_BROWSER=local).`);
   }
   const key = process.env.ICHABOD_API_KEY;
   if (!key) throw new Error("Remote mode needs ICHABOD_API_KEY. Set it to an Ichabod project API key.");
+  return key;
+}
+
+/** Connect to Ichabod, install the extension, and find its UUID. */
+export async function connectIchabod(options: RemoteOptions): Promise<{ browser: Browser; base: string; close: () => Promise<void> }> {
+  const key = checkRemote(options);
   const record = options.record ?? true;
   const endpoint = `wss://${process.env.ICHABOD_HOST ?? DEFAULT_HOST}/gecko/${process.env.ICHABOD_GECKO ?? "latest"}${record ? "" : "?record_session=false"}`;
-  const zipped = remoteExtensionZip(options.extension);
 
   let browser: Browser | undefined;
   let ws: WebSocket | undefined;
@@ -158,6 +186,7 @@ export async function connectIchabod(options: RemoteOptions): Promise<{ browser:
     // Puppeteer types connection for CDP only; on BiDi it sends raw BiDi commands.
     const bidi = (browser as unknown as { connection: { send(method: string, params: object): Promise<{ result: unknown }> } }).connection;
     const send = (method: string, params: object) => bidi.send(method, params);
+    const zipped = remoteExtensionZip(options.extension, await options.host);
     await send("webExtension.install", { extensionData: { type: "base64", value: zipped.toString("base64") } });
 
     const deadline = Date.now() + 15_000;
