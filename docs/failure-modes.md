@@ -84,9 +84,26 @@ lifetime and its routes are the risks here.
 
 | # | Failure mode | Wanted behaviour | Test |
 |---|---|---|---|
-| R1 | `FOXKIT_BROWSER` has a value that is not `ichabod` or `local`, for example `ichabod ` or `ichbod`. The test runs on the local Firefox and nobody sees it. | `serve()` and `tunnel()` throw an error that names the value and the two allowed values. They start nothing. | `tests/tunnel.test.ts` |
+| R1 | `FOXKIT_BROWSER` has a value that is not `ichabod` or `local`, for example `ichabod ` or `ichbod`. The test runs on the local Firefox and nobody sees it. | `launch()`, `serve()` and `tunnel()` throw an error that names the value and the two allowed values. They start nothing. | `tests/tunnel.test.ts`, `tests/remote.test.ts` |
 | T1 | `cloudflared` is not installed. | `tunnel()` throws an error that names `brew install cloudflared` and the `CLOUDFLARED` variable. | `tests/tunnel.test.ts` |
 | T2 | The quick tunnel starts slowly or fails: no URL, a URL that does not resolve yet, or Cloudflare error 530. | `tunnel()` waits until a request through the tunnel gets an answer from the gateway. It asks the `trycloudflare.com` name servers, because a caching resolver asked too early keeps a "no such host" answer for minutes. It tries 3 times, then throws with the end of the `cloudflared` output. | `tests/tunnel.test.ts` (a fake `cloudflared`) |
 | T3 | A tunnel keeps a local server public after `close()`, after a failed start, or after the test process stops. Or the tunnel keeps the process from exiting. | `close()` unmounts the server, and its URL answers 404 at once. A failed start stops `cloudflared`. The shared `cloudflared` does not keep the process alive; the process exit, or `closeTunnels()`, stops it, and `closeTunnels()` returns. | `tests/tunnel.test.ts`; `scripts/e2e-ichabod.mjs` ends on `closeTunnels()` |
 | T4 | A run opens one quick tunnel per server. Cloudflare refuses quick tunnels with 429 after about 15 in a short time, so the run fails, and so do runs after it for an hour or more. | The tunnel count per process is at most 1: every `tunnel()` and `serve()` mounts on the one shared tunnel. | `tests/tunnel.test.ts` counts `cloudflared` starts |
 | T5 | A page under a mount uses an absolute path (`/app.js`) or redirects to one, and misses its server. Or a request with no mount reaches a local server. | The gateway strips `/_foxkit/<id>` before it forwards. A request without the prefix goes to the mount that its `Referer` names. A `Location` of `/path` or `http://127.0.0.1:<port>/path` gets the public prefix. Any other request gets 404. All mounts share one origin. | `tests/tunnel.test.ts` |
+
+## Remote mode (Ichabod)
+
+`launch({ remote: "ichabod" })`, or `FOXKIT_BROWSER=ichabod`, connects to a
+Firefox on Ichabod instead of a local Firefox. The API key and the cost of
+an open session are the risks here.
+
+| # | Failure mode | Wanted behaviour | Test |
+|---|---|---|---|
+| R2 | Remote mode starts without `ICHABOD_API_KEY`. | `launch()` throws an error that names `ICHABOD_API_KEY`. It connects to nothing. | `tests/remote.test.ts` |
+| R3 | Remote mode gets an option that Ichabod cannot apply: `prefs`, `firefox` or `headless: false`. The test then runs in a different Firefox than it asks for. | `launch()` throws before it connects and names the option. | `tests/remote.test.ts` |
+| R4 | The API key gets into an error message, a log or an artifact. Puppeteer puts the endpoint URL into some errors, and a key in that URL leaks with it. | The key never goes into a URL: it goes in an `Authorization` header. Each error from remote mode has the key replaced with `***`. `writeArtifact()` replaces the key with `***` before it writes. | `tests/remote.test.ts` |
+| R5 | `launch()` fails after it connects, for example when the install fails. The remote session stays open and costs money. | `launch()` closes the session, then throws. | `scripts/e2e-ichabod.mjs` |
+| R6 | `extensionUrl()` returns a wrong UUID. Ichabod cannot set the `extensions.webextensions.uuids` preference, so the local trick does not work. | The installed copy gets one more background script. It opens `foxkit-uuid.html` in a background tab. `launch()` reads the UUID from that tab's URL, then closes the tab. The extension directory does not change. When no tab opens in 15 s, `launch()` throws. | `tests/remote.test.ts` checks the zip; `scripts/e2e-ichabod.mjs` checks the UUID |
+| R7 | Ichabod refuses `moz-extension:` pages in a tab: its Firefox runs without `-remote-allow-system-access`. `openExtensionPage()` then polls for 30 s and the timeout hides the cause. | `openExtensionPage()` throws at once, and the error names the flag and says what to do. | `scripts/e2e-ichabod.mjs` |
+| R8 | Nobody can find the recording of a remote run. | `writeArtifact()` adds `ichabod` to the record: the BiDi session ID, the Firefox version, and whether the session is recorded. | `scripts/e2e-ichabod.mjs` |
+

@@ -8,7 +8,9 @@
 //   writeArtifact("artifacts", "e2e", { value });              // artifacts/e2e-<date>.json
 //   await fox.close(); await site.close();
 //
-// With FOXKIT_BROWSER=ichabod, serve() returns a public URL on the one shared
+// Remote mode: FOXKIT_BROWSER=ichabod (or launch({ remote: "ichabod" })) runs
+// the same test on a Firefox on Ichabod, Mozilla's cloud browser service
+// (src/ichabod.ts). serve() then returns a public URL on the one shared
 // tunnel of the process (src/tunnel.ts).
 //
 // Firefox facts this file depends on (docs/failure-modes.md H3, H4):
@@ -22,10 +24,12 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { delimiter, extname, join, resolve, sep } from "node:path";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
+import { connectIchabod, redact, remoteSessions } from "./ichabod.js";
 import { browserMode } from "./mode.js";
 import { tunnel } from "./tunnel.js";
 
 export type { Browser, Page };
+export type { RemoteSession } from "./ichabod.js";
 export { type BrowserMode, browserMode } from "./mode.js";
 export { closeTunnels, tunnel, type Tunnel, type TunnelOptions } from "./tunnel.js";
 
@@ -36,14 +40,18 @@ export interface LaunchOptions {
   firefox?: string;
   /** Run without a window. Default: true. */
   headless?: boolean;
-  /** More Firefox preferences. */
+  /** More Firefox preferences. Remote mode refuses this option. */
   prefs?: Record<string, unknown>;
+  /** "ichabod" runs on Ichabod; "local" runs a local Firefox. Default: FOXKIT_BROWSER, then "local". */
+  remote?: "ichabod" | "local";
+  /** Remote mode only: record the session to video. Default: true. */
+  record?: boolean;
 }
 
 export interface Fox {
   /** The Puppeteer browser, for anything this API does not cover. */
   browser: Browser;
-  /** The temporary profile directory. close() deletes it. */
+  /** The temporary profile directory. close() deletes it. Empty in remote mode. */
   profile: string;
   /** The gecko ID from the manifest. */
   extensionId: string;
@@ -53,7 +61,7 @@ export interface Fox {
   open(url: string): Promise<Page>;
   /** Open an extension page in a new tab and wait until it is loaded. */
   openExtensionPage(path: string, timeoutMs?: number): Promise<Page>;
-  /** Close Firefox and delete the profile. A second call does nothing. */
+  /** Close Firefox and delete the profile (remote: end the session). A second call does nothing. */
   close(): Promise<void>;
 }
 
@@ -107,10 +115,45 @@ export async function poll<T, A = undefined>(
   }
 }
 
+type OpenPage = (browser: Browser, url: string, timeoutMs: number) => Promise<Page>;
+
+function foxFor(browser: Browser, base: string, profile: string, extensionId: string, close: () => Promise<void>, openPage: OpenPage): Fox {
+  return {
+    browser,
+    profile,
+    extensionId,
+    extensionUrl: (path = "") => base + path.replace(/^\//, ""),
+    async open(url) {
+      const page = await browser.newPage();
+      await page.goto(url, { waitUntil: "load" });
+      return page;
+    },
+    openExtensionPage: (path, timeoutMs = 30_000) => openPage(browser, base + path.replace(/^\//, ""), timeoutMs),
+    close,
+  };
+}
+
+/** Local mode: the page in its own tab. goto() never resolves there (H4), so poll. */
+const openInTab: OpenPage = async (browser, url, timeoutMs) => {
+  const page = await browser.newPage();
+  page.goto(url, { timeout: 0 }).catch(() => {});
+  await poll(page, (u: string) => location.href === u && document.readyState === "complete", url, timeoutMs);
+  return page;
+};
+
+/** Remote mode: Ichabod's Firefox refuses moz-extension: pages. Say why at once, do not poll (R7). */
+const refuseExtensionPage: OpenPage = async (_browser, url) => {
+  throw new Error(`Ichabod's Firefox does not let WebDriver BiDi open ${url}: it runs without -remote-allow-system-access. Test the extension through a web page, or run this check locally.`);
+};
+
 /** Start Firefox with a fresh profile and the extension installed as a temporary add-on. */
 export async function launch(options: LaunchOptions): Promise<Fox> {
   const extension = resolve(options.extension);
   const extensionId = geckoId(extension);
+  if (browserMode(options.remote) === "ichabod") {
+    const remote = await connectIchabod({ ...options, extension });
+    return foxFor(remote.browser, remote.base, "", extensionId, remote.close, refuseExtensionPage);
+  }
   const executablePath = findFirefox(options.firefox);
   // A fixed UUID makes the moz-extension: URL known before the add-on loads.
   const uuid = randomUUID();
@@ -139,27 +182,7 @@ export async function launch(options: LaunchOptions): Promise<Fox> {
     await close();
     throw error;
   }
-  const started = browser;
-
-  return {
-    browser: started,
-    profile,
-    extensionId,
-    extensionUrl: (path = "") => base + path.replace(/^\//, ""),
-    async open(url) {
-      const page = await started.newPage();
-      await page.goto(url, { waitUntil: "load" });
-      return page;
-    },
-    async openExtensionPage(path, timeoutMs = 30_000) {
-      const url = base + path.replace(/^\//, "");
-      const page = await started.newPage();
-      page.goto(url, { timeout: 0 }).catch(() => {});
-      await poll(page, (u: string) => location.href === u && document.readyState === "complete", url, timeoutMs);
-      return page;
-    },
-    close,
-  };
+  return foxFor(browser, base, profile, extensionId, close, openInTab);
 }
 
 const TYPES: Record<string, string> = {
@@ -216,10 +239,16 @@ export async function serve(dir: string, options: { tunnel?: boolean } = {}): Pr
   };
 }
 
-/** Write data to <dir>/<name>-<YYYY-MM-DD>.json and return the path. */
+/**
+ * Write data to <dir>/<name>-<YYYY-MM-DD>.json and return the path. After a
+ * remote run, an object gets an ichabod list of the sessions (R8). The
+ * Ichabod key becomes *** (R4).
+ */
 export function writeArtifact(dir: string, name: string, data: unknown): string {
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${name}-${new Date().toISOString().slice(0, 10)}.json`);
-  writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`);
+  const plain = typeof data === "object" && data !== null && !Array.isArray(data);
+  const record = plain && remoteSessions.length > 0 ? { ...data, ichabod: remoteSessions } : data;
+  writeFileSync(path, `${redact(JSON.stringify(record, null, 2))}\n`);
   return path;
 }
