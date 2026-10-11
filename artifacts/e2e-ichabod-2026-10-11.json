@@ -1,0 +1,158 @@
+{
+  "startedAt": "2026-10-11T07:02:08.399Z",
+  "steps": [
+    {
+      "name": "serve() returns a public URL on the shared tunnel",
+      "ok": true,
+      "detail": {
+        "ms": 9699,
+        "url": "https://removal-comments-internationally-wear.trycloudflare.com/_foxkit/1"
+      }
+    },
+    {
+      "name": "launch() connects to Ichabod and installs the extension",
+      "ok": true,
+      "detail": {
+        "ms": 797,
+        "firefox": "firefox/157.0.1"
+      }
+    },
+    {
+      "name": "T4 serve(), the frame host and one more tunnel() share one cloudflared",
+      "ok": true,
+      "detail": {
+        "before": 0,
+        "during": 1
+      }
+    },
+    {
+      "name": "the cloud browser loads the page through the tunnel",
+      "ok": true
+    },
+    {
+      "name": "R6 extensionUrl() has the real moz-extension: UUID",
+      "ok": true,
+      "detail": {
+        "real": "moz-extension://2b530d0f-0764-4cfd-9660-d286bbcaa24a/",
+        "extensionUrl": "moz-extension://2b530d0f-0764-4cfd-9660-d286bbcaa24a/"
+      }
+    },
+    {
+      "name": "a screenshot of a web page works",
+      "ok": true
+    },
+    {
+      "name": "R7 openExtensionPage() opens the extension page in a frame BiDi can script",
+      "ok": true,
+      "detail": {
+        "ms": 930
+      }
+    },
+    {
+      "name": "the framed page reaches the real background and storage",
+      "ok": true
+    },
+    {
+      "name": "F2 a relayed tabs.query() sees the real tabs",
+      "ok": true,
+      "detail": [
+        "about:blank",
+        "https://removal-comments-internationally-wear.trycloudflare.com/_foxkit/1/index.html",
+        "moz-extension://2b530d0f-0764-4cfd-9660-d286bbcaa24a/page.html"
+      ]
+    },
+    {
+      "name": "F7 tabs.getCurrent() is the frame's tab, with the extension page URL",
+      "ok": true,
+      "detail": "moz-extension://2b530d0f-0764-4cfd-9660-d286bbcaa24a/page.html"
+    },
+    {
+      "name": "F2 a relayed event (tabs.onCreated) reaches the page",
+      "ok": true,
+      "detail": {
+        "created": 5,
+        "events": [
+          5
+        ]
+      }
+    },
+    {
+      "name": "F6 a call that needs a user gesture fails and says so",
+      "ok": true,
+      "detail": "browser.permissions.request needs a user gesture, and a relayed call has none: permissions.request may only be called from a user input handler"
+    },
+    {
+      "name": "F6 a granted namespace the relay does not cover throws",
+      "ok": true,
+      "detail": "create-foxkit frame relay: browser.privacy is granted but not relayed into a framed page. Run this check locally, or add the namespace to create-foxkit's frame relay."
+    },
+    {
+      "name": "a click in the framed page works",
+      "ok": true
+    },
+    {
+      "name": "a screenshot of the framed page works",
+      "ok": true
+    },
+    {
+      "name": "F3 the relay refuses the extension page framed on a test site of the same tunnel",
+      "ok": true,
+      "detail": "create-foxkit frame relay: the relay answers only this extension's pages framed on https://removal-comments-internationally-wear.trycloudflare.com/_foxkit/frame-1."
+    },
+    {
+      "name": "R4 R5 a failed install throws without the key (the script exits, so the session closed)",
+      "ok": true,
+      "detail": "Protocol error (webExtension.install): invalid web extension Could not install Add-on: Extension is invalid RemoteError@chrome://remote/content/shared/RemoteError.sys.mjs:8:8\nWebDriverError@chrome://r"
+    },
+    {
+      "name": "T3 closeTunnels() stops the one cloudflared",
+      "ok": true,
+      "detail": {
+        "before": 0,
+        "after": 0
+      }
+    },
+    {
+      "name": "R8 the artifact lists both Ichabod sessions with their IDs",
+      "ok": true,
+      "detail": [
+        {
+          "service": "ichabod",
+          "sessionId": "9fd58e3e-85d7-4c8f-b02f-83def7cd3ad3",
+          "firefox": "firefox/157.0.1",
+          "recorded": true,
+          "startedAt": "2026-10-11T07:02:18.533Z"
+        },
+        {
+          "service": "ichabod",
+          "sessionId": "489dee5b-7ac8-44f7-859c-b55b8e82aae6",
+          "firefox": "firefox/157.0.1",
+          "recorded": true,
+          "startedAt": "2026-10-11T07:02:23.232Z"
+        }
+      ]
+    },
+    {
+      "name": "R4 the artifact does not hold the key",
+      "ok": true
+    }
+  ],
+  "firefox": "firefox/157.0.1",
+  "passed": true,
+  "ichabod": [
+    {
+      "service": "ichabod",
+      "sessionId": "9fd58e3e-85d7-4c8f-b02f-83def7cd3ad3",
+      "firefox": "firefox/157.0.1",
+      "recorded": true,
+      "startedAt": "2026-10-11T07:02:18.533Z"
+    },
+    {
+      "service": "ichabod",
+      "sessionId": "489dee5b-7ac8-44f7-859c-b55b8e82aae6",
+      "firefox": "firefox/157.0.1",
+      "recorded": true,
+      "startedAt": "2026-10-11T07:02:23.232Z"
+    }
+  ]
+}
