@@ -28,6 +28,7 @@ import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { framedPage, HOST_PAGE } from "./frame.js";
 import { checkRemote, connectIchabod, redact, remoteSessions } from "./ichabod.js";
 import { browserMode } from "./mode.js";
+import { type Navigate, navigator, REMOTE_NAVIGATION_TIMEOUT_MS } from "./navigate.js";
 import { mount, tunnel } from "./tunnel.js";
 
 export type { Browser, Page };
@@ -59,7 +60,11 @@ export interface Fox {
   extensionId: string;
   /** moz-extension://<uuid>/<path> for this extension. */
   extensionUrl(path?: string): string;
-  /** Open a URL in a new tab and wait for its load event. */
+  /**
+   * Open a URL in a new tab and wait for its load event. In remote mode the
+   * limit is 60 s, a timeout or network error gets one more try, and the page
+   * keeps 60 s as its default navigation timeout (R10).
+   */
   open(url: string): Promise<Page>;
   /**
    * Open an extension page in a new tab and wait until it is loaded. In remote
@@ -123,7 +128,7 @@ export async function poll<T, A = undefined>(
 
 type OpenPage = (browser: Browser, url: string, timeoutMs: number) => Promise<Page>;
 
-function foxFor(browser: Browser, base: string, profile: string, extensionId: string, close: () => Promise<void>, openPage: OpenPage): Fox {
+function foxFor(browser: Browser, base: string, profile: string, extensionId: string, close: () => Promise<void>, openPage: OpenPage, navigate: Navigate, remote: boolean): Fox {
   return {
     browser,
     profile,
@@ -131,7 +136,8 @@ function foxFor(browser: Browser, base: string, profile: string, extensionId: st
     extensionUrl: (path = "") => base + path.replace(/^\//, ""),
     async open(url) {
       const page = await browser.newPage();
-      await page.goto(url, { waitUntil: "load" });
+      if (remote) page.setDefaultNavigationTimeout(REMOTE_NAVIGATION_TIMEOUT_MS);
+      await navigate(page, url);
       return page;
     },
     openExtensionPage: (path, timeoutMs = 30_000) => openPage(browser, base + path.replace(/^\//, ""), timeoutMs),
@@ -149,10 +155,11 @@ const openInTab: OpenPage = async (browser, url, timeoutMs) => {
 
 /** Remote mode: the page in a frame on the frame host, which BiDi can script (R7). */
 const openInFrame =
-  (host: string): OpenPage =>
+  (host: string, navigate: Navigate): OpenPage =>
   async (browser, url, timeoutMs) => {
     const page = await browser.newPage();
-    await page.goto(`${host}/`, { waitUntil: "load" });
+    page.setDefaultNavigationTimeout(REMOTE_NAVIGATION_TIMEOUT_MS);
+    await navigate(page, `${host}/`);
     await page.evaluate((u: string) => {
       const frame = document.createElement("iframe");
       frame.allow = "microphone; camera; clipboard-read; clipboard-write; fullscreen";
@@ -212,7 +219,8 @@ export async function launch(options: LaunchOptions): Promise<Fox> {
     });
     let closing: Promise<void> | undefined;
     const close = () => (closing ??= remote.close().finally(host.close));
-    return foxFor(remote.browser, remote.base, "", extensionId, close, openInFrame(await host.url));
+    const navigate = navigator("ichabod");
+    return foxFor(remote.browser, remote.base, "", extensionId, close, openInFrame(await host.url, navigate), navigate, true);
   }
   const executablePath = findFirefox(options.firefox);
   // A fixed UUID makes the moz-extension: URL known before the add-on loads.
@@ -242,7 +250,7 @@ export async function launch(options: LaunchOptions): Promise<Fox> {
     await close();
     throw error;
   }
-  return foxFor(browser, base, profile, extensionId, close, openInTab);
+  return foxFor(browser, base, profile, extensionId, close, openInTab, navigator("local"), false);
 }
 
 const TYPES: Record<string, string> = {

@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { closeTunnels, serve, tunnel } from "../src/e2e.js";
 
-const probe = vi.hoisted(() => ({ code: 200 }));
+const probe = vi.hoisted(() => ({ code: 200, urls: [] as string[] }));
 vi.mock("node:dns/promises", async (original) => ({
   ...(await original<object>()),
   resolveNs: async () => ["ns.test"],
@@ -24,7 +24,8 @@ vi.mock("node:dns/promises", async (original) => ({
 }));
 vi.mock("node:https", async (original) => ({
   ...(await original<object>()),
-  request: (_url: string, _options: object, callback: (res: object) => void) => {
+  request: (url: string, _options: object, callback: (res: object) => void) => {
+    probe.urls.push(url);
     const req = Object.assign(new EventEmitter(), { end: () => queueMicrotask(() => callback({ statusCode: probe.code, resume() {} })), destroy() {} });
     return req;
   },
@@ -35,6 +36,7 @@ let dir = "";
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "foxkit-tunnel-test-"));
   probe.code = 200;
+  probe.urls = [];
   delete process.env.FOXKIT_BROWSER;
   delete process.env.CLOUDFLARED;
 });
@@ -113,14 +115,28 @@ describe("starting the shared tunnel", () => {
     expect(pids().filter(alive)).toEqual([]);
   }, 20_000);
 
+  it.each([404, 520, 522, 524])("T2 a %d through Cloudflare is not the gateway's 200, so the tunnel is not ready", async (code) => {
+    probe.code = code;
+    await expect(tunnel(8080, { cloudflared: fake(OPENS), timeoutMs: 800 })).rejects.toThrow("3 tries");
+  }, 20_000);
+
+  it("T2 the probe asks the gateway's ready path, and the gateway answers it 200", async () => {
+    await tunnel(8080, { cloudflared: fake(OPENS) });
+    expect(probe.urls.length).toBeGreaterThan(0);
+    expect(probe.urls.every((u) => u === "https://fake-gateway.trycloudflare.com/_foxkit-ready")).toBe(true);
+    expect((await get("/_foxkit-ready")).status).toBe(200);
+  });
+
   it("T3 a signal stops a start that is still running", async () => {
     probe.code = 530;
     const stop = new AbortController();
     const started = tunnel(8080, { cloudflared: fake(OPENS), signal: stop.signal });
-    setTimeout(() => stop.abort(), 300);
+    // Abort once cloudflared runs, not after a fixed time: a slow spawn would abort before the PID is written.
+    await vi.waitFor(() => expect(pids().filter(alive)).toHaveLength(1), { timeout: 10_000, interval: 10 });
+    stop.abort();
     await expect(started).rejects.toThrow("stopped before it opened");
     expect(pids().filter(alive)).toEqual([]);
-  });
+  }, 20_000);
 });
 
 describe("T4 one tunnel per process", () => {

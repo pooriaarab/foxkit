@@ -69,6 +69,7 @@ src/mode.ts       FOXKIT_BROWSER: the local Firefox or Ichabod
 src/ichabod.ts    remote mode: a Firefox on Ichabod instead of a local one
 src/tunnel.ts     the one shared Cloudflare quick tunnel for cloud browsers
 src/frame.ts      remote openExtensionPage(): the frame host, shim and relay
+src/navigate.ts   how open() navigates: one try locally, 60 s and a retry on Ichabod
 template/base/    files every new repo gets
 template/extension/  extra files for --extension
 tests/            isolated tests for the failure modes in docs/failure-modes.md
