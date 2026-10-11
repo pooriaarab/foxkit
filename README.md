@@ -189,7 +189,7 @@ A `Fox` has these members:
 | `profile` | The temporary profile directory. |
 | `extensionId` | The gecko ID from the manifest. |
 | `extensionUrl(path?)` | Returns `moz-extension://<uuid>/<path>`. |
-| `open(url)` | Opens the URL in a new tab, waits for the load event, and returns the Puppeteer `Page`. |
+| `open(url)` | Opens the URL in a new tab, waits for the load event, and returns the Puppeteer `Page`. On Ichabod the limit is 60 s, not 30 s, and a timeout or network error gets one more try with a log line. The page keeps 60 s as its default navigation timeout. |
 | `openExtensionPage(path, timeoutMs = 30000)` | Opens an extension page in a new tab and polls until it is loaded. In remote mode the page is in a frame: see "Extension pages on Ichabod". |
 | `close()` | Stops Firefox and deletes the profile. A second call does nothing. |
 
