@@ -8,6 +8,9 @@
 //   writeArtifact("artifacts", "e2e", { value });              // artifacts/e2e-<date>.json
 //   await fox.close(); await site.close();
 //
+// With FOXKIT_BROWSER=ichabod, serve() returns a public URL on the one shared
+// tunnel of the process (src/tunnel.ts).
+//
 // Firefox facts this file depends on (docs/failure-modes.md H3, H4):
 // WebDriver BiDi refuses moz-extension: pages unless Firefox starts with
 // -remote-allow-system-access, and it sends no navigation events for them, so
@@ -19,8 +22,12 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { delimiter, extname, join, resolve, sep } from "node:path";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
+import { browserMode } from "./mode.js";
+import { tunnel } from "./tunnel.js";
 
 export type { Browser, Page };
+export { type BrowserMode, browserMode } from "./mode.js";
+export { closeTunnels, tunnel, type Tunnel, type TunnelOptions } from "./tunnel.js";
 
 export interface LaunchOptions {
   /** The extension directory. Its manifest.json must set browser_specific_settings.gecko.id. */
@@ -166,8 +173,13 @@ const TYPES: Record<string, string> = {
   ".txt": "text/plain; charset=utf-8",
 };
 
-/** Serve a directory on http://127.0.0.1:<free port>. Paths outside it get 404. */
-export async function serve(dir: string): Promise<{ url: string; close: () => Promise<void> }> {
+/**
+ * Serve a directory on http://127.0.0.1:<free port>. Paths outside it get 404.
+ * With tunnel (default: true when FOXKIT_BROWSER=ichabod), url is a public
+ * URL on the shared tunnel.
+ */
+export async function serve(dir: string, options: { tunnel?: boolean } = {}): Promise<{ url: string; close: () => Promise<void> }> {
+  const tunneled = options.tunnel ?? browserMode() === "ichabod";
   const root = resolve(dir);
   const server = createServer((req, res) => {
     let file = "";
@@ -185,13 +197,22 @@ export async function serve(dir: string): Promise<{ url: string; close: () => Pr
   });
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   const { port } = server.address() as AddressInfo;
+  const stopServer = () =>
+    new Promise<void>((done) => {
+      server.close(() => done());
+      server.closeAllConnections();
+    });
+  if (!tunneled) return { url: `http://127.0.0.1:${port}`, close: stopServer };
+  const opened = await tunnel(port).catch(async (error: unknown) => {
+    await stopServer();
+    throw error;
+  });
   return {
-    url: `http://127.0.0.1:${port}`,
-    close: () =>
-      new Promise<void>((done) => {
-        server.close(() => done());
-        server.closeAllConnections();
-      }),
+    url: opened.url,
+    close: async () => {
+      await opened.close();
+      await stopServer();
+    },
   };
 }
 
