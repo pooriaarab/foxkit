@@ -281,7 +281,10 @@ and the frame host each mount at `/_foxkit/<id>/`:
 
 - The gateway strips the prefix before it forwards. A request for an
   absolute path such as `/app.js` goes to the mount that its `Referer`
-  names, and a redirect to `/path` gets the prefix back.
+  names, and a redirect to `/path` gets the prefix back. When that request
+  is a page navigation (a link or a form), the gateway answers `307` to the
+  same path under the mount, so the next page keeps the prefix for its own
+  links.
 - All mounts share one origin. A check that needs two sites on different
   origins, or a host name such as `bank.localhost`, must run locally.
 - WebSocket upgrades are not forwarded.
