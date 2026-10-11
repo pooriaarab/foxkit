@@ -1,19 +1,19 @@
 {
-  "startedAt": "2026-10-11T11:33:44.250Z",
+  "startedAt": "2026-10-11T12:35:24.610Z",
   "steps": [
     {
       "name": "serve() returns a public URL on the shared tunnel",
       "ok": true,
       "detail": {
-        "ms": 5526,
-        "url": "https://hats-birmingham-incidents-permission.trycloudflare.com/_foxkit/1"
+        "ms": 5622,
+        "url": "https://geography-pros-translations-charge.trycloudflare.com/_foxkit/1"
       }
     },
     {
       "name": "launch() connects to Ichabod and installs the extension",
       "ok": true,
       "detail": {
-        "ms": 686,
+        "ms": 826,
         "firefox": "firefox/157.0.1"
       }
     },
@@ -30,11 +30,19 @@
       "ok": true
     },
     {
+      "name": "T6 two hops of absolute links keep the mount path",
+      "ok": true,
+      "detail": {
+        "title": "hop 2",
+        "path": "/_foxkit/1/hop2.html"
+      }
+    },
+    {
       "name": "R6 extensionUrl() has the real moz-extension: UUID",
       "ok": true,
       "detail": {
-        "real": "moz-extension://52594da3-c4bd-4077-bdf0-6cee3c1111b8/",
-        "extensionUrl": "moz-extension://52594da3-c4bd-4077-bdf0-6cee3c1111b8/"
+        "real": "moz-extension://a6bf39eb-f2a7-4ae8-9d8b-7ae30cc77ed1/",
+        "extensionUrl": "moz-extension://a6bf39eb-f2a7-4ae8-9d8b-7ae30cc77ed1/"
       }
     },
     {
@@ -45,7 +53,7 @@
       "name": "R7 openExtensionPage() opens the extension page in a frame BiDi can script",
       "ok": true,
       "detail": {
-        "ms": 694
+        "ms": 781
       }
     },
     {
@@ -57,14 +65,14 @@
       "ok": true,
       "detail": [
         "about:blank",
-        "https://hats-birmingham-incidents-permission.trycloudflare.com/_foxkit/1/index.html",
-        "moz-extension://52594da3-c4bd-4077-bdf0-6cee3c1111b8/page.html"
+        "https://geography-pros-translations-charge.trycloudflare.com/_foxkit/1/hop2.html?from=1",
+        "moz-extension://a6bf39eb-f2a7-4ae8-9d8b-7ae30cc77ed1/page.html"
       ]
     },
     {
       "name": "F7 tabs.getCurrent() is the frame's tab, with the extension page URL",
       "ok": true,
-      "detail": "moz-extension://52594da3-c4bd-4077-bdf0-6cee3c1111b8/page.html"
+      "detail": "moz-extension://a6bf39eb-f2a7-4ae8-9d8b-7ae30cc77ed1/page.html"
     },
     {
       "name": "F2 a relayed event (tabs.onCreated) reaches the page",
@@ -110,7 +118,7 @@
     {
       "name": "F3 the relay refuses the extension page framed on a test site of the same tunnel",
       "ok": true,
-      "detail": "create-foxkit frame relay: the relay answers only this extension's pages framed on https://hats-birmingham-incidents-permission.trycloudflare.com/_foxkit/frame-1."
+      "detail": "create-foxkit frame relay: the relay answers only this extension's pages framed on https://geography-pros-translations-charge.trycloudflare.com/_foxkit/frame-1."
     },
     {
       "name": "R4 R5 a failed install throws without the key (the script exits, so the session closed)",
@@ -131,17 +139,17 @@
       "detail": [
         {
           "service": "ichabod",
-          "sessionId": "4a46806a-286a-4c80-9aee-d1e21d29017e",
+          "sessionId": "8eba0871-d8dd-4c6e-b698-4b0d36c19c12",
           "firefox": "firefox/157.0.1",
           "recorded": true,
-          "startedAt": "2026-10-11T11:33:50.272Z"
+          "startedAt": "2026-10-11T12:35:30.704Z"
         },
         {
           "service": "ichabod",
-          "sessionId": "87faf485-2e50-491e-b22d-bffc38cf0af8",
+          "sessionId": "83ba248e-4cd7-48b0-833b-b00bb08ef154",
           "firefox": "firefox/157.0.1",
           "recorded": true,
-          "startedAt": "2026-10-11T11:33:54.486Z"
+          "startedAt": "2026-10-11T12:35:38.512Z"
         }
       ]
     },
@@ -155,17 +163,17 @@
   "ichabod": [
     {
       "service": "ichabod",
-      "sessionId": "4a46806a-286a-4c80-9aee-d1e21d29017e",
+      "sessionId": "8eba0871-d8dd-4c6e-b698-4b0d36c19c12",
       "firefox": "firefox/157.0.1",
       "recorded": true,
-      "startedAt": "2026-10-11T11:33:50.272Z"
+      "startedAt": "2026-10-11T12:35:30.704Z"
     },
     {
       "service": "ichabod",
-      "sessionId": "87faf485-2e50-491e-b22d-bffc38cf0af8",
+      "sessionId": "83ba248e-4cd7-48b0-833b-b00bb08ef154",
       "firefox": "firefox/157.0.1",
       "recorded": true,
-      "startedAt": "2026-10-11T11:33:54.486Z"
+      "startedAt": "2026-10-11T12:35:38.512Z"
     }
   ]
 }
