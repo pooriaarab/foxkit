@@ -104,6 +104,19 @@ an open session are the risks here.
 | R4 | The API key gets into an error message, a log or an artifact. Puppeteer puts the endpoint URL into some errors, and a key in that URL leaks with it. | The key never goes into a URL: it goes in an `Authorization` header. Each error from remote mode has the key replaced with `***`. `writeArtifact()` replaces the key with `***` before it writes. | `tests/remote.test.ts` |
 | R5 | `launch()` fails after it connects, for example when the install fails. The remote session stays open and costs money. | `launch()` closes the session, then throws. | `scripts/e2e-ichabod.mjs` |
 | R6 | `extensionUrl()` returns a wrong UUID. Ichabod cannot set the `extensions.webextensions.uuids` preference, so the local trick does not work. | The installed copy gets one more background script. It opens `foxkit-uuid.html` in a background tab. `launch()` reads the UUID from that tab's URL, then closes the tab. The extension directory does not change. When no tab opens in 15 s, `launch()` throws. | `tests/remote.test.ts` checks the zip; `scripts/e2e-ichabod.mjs` checks the UUID |
-| R7 | Ichabod refuses `moz-extension:` pages in a tab: its Firefox runs without `-remote-allow-system-access`. `openExtensionPage()` then polls for 30 s and the timeout hides the cause. | `openExtensionPage()` throws at once, and the error names the flag and says what to do. | `scripts/e2e-ichabod.mjs` |
+| R7 | Ichabod refuses `moz-extension:` pages in a tab: its Firefox runs without `-remote-allow-system-access`, so BiDi cannot open, script or capture them. | `openExtensionPage()` opens the page in an iframe on the frame host (F1-F5). BiDi can script and capture an extension page in a frame. | `scripts/e2e-ichabod.mjs` |
 | R8 | Nobody can find the recording of a remote run. | `writeArtifact()` adds `ichabod` to the record: the BiDi session ID, the Firefox version, and whether the session is recorded. | `scripts/e2e-ichabod.mjs` |
+
+## Extension pages on Ichabod (the frame host)
+
+A test-only shim and relay give a framed page the namespaces it lacks. They
+must not make a test pass that fails for a user.
+
+| # | Failure mode | Wanted behaviour | Test |
+|---|---|---|---|
+| F1 | The frame shim gives the page an API that the real page does not have, so a test passes that fails for a user. | The shim fills a namespace only when the frame lacks it, only in a frame, and only when the manifest grants it: `tabs`, `windows` and `permissions` always, `action` and `sidebarAction` when the manifest has the key, the rest when `permissions` lists them. The list is in `src/frame.ts`. A top-level page and a context that has the namespace do not change. | `tests/frame.test.ts` |
+| F2 | The relay does a call that the real page could not do. | The relay runs each call in the background page, which has the same extension principal and permissions as the real page. It answers only for the namespaces in F1. | `tests/frame.test.ts`; `scripts/e2e-ichabod.mjs` |
+| F3 | A test-only piece reaches a page that is not the frame host, for example a test site on the same tunnel. | Only the remote zip has the pieces; the extension directory does not change. `web_accessible_resources` lists the pages for the tunnel origin. Firefox matches that by origin only, so a test site on the tunnel can frame a page; the relay refuses its port, because the relay answers only this extension's pages, in a frame (`frameId` is not 0), in a tab on the frame host path. | `tests/frame.test.ts`; `scripts/e2e-ichabod.mjs` |
+| F4 | The frame host stays mounted after `close()` or after a failed `launch()`, or a failed `launch()` leaves the tunnel start running. | `close()` unmounts the frame host and stops its server. A failed `launch()` stops the tunnel start and both, before it throws. | `tests/remote.test.ts` (R4); `scripts/e2e-ichabod.mjs` |
+| F5 | The relay port reaches the extension's own `runtime.onConnect` listener, and the extension treats it as one of its ports. | The port is named `foxkit-relay`. An extension that ignores `port.name` sees it; the README says to check the name. | README |
 
