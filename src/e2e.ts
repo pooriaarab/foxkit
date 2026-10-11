@@ -16,7 +16,8 @@
 // Firefox facts this file depends on (docs/failure-modes.md H3, H4):
 // WebDriver BiDi refuses moz-extension: pages unless Firefox starts with
 // -remote-allow-system-access, and it sends no navigation events for them, so
-// goto() never resolves there. openExtensionPage() polls instead.
+// goto() never resolves there. openExtensionPage() polls instead. In remote
+// mode, the page opens in a frame on the frame host (src/frame.ts, R7).
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -24,9 +25,10 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { delimiter, extname, join, resolve, sep } from "node:path";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
-import { connectIchabod, redact, remoteSessions } from "./ichabod.js";
+import { framedPage, HOST_PAGE } from "./frame.js";
+import { checkRemote, connectIchabod, redact, remoteSessions } from "./ichabod.js";
 import { browserMode } from "./mode.js";
-import { tunnel } from "./tunnel.js";
+import { mount, tunnel } from "./tunnel.js";
 
 export type { Browser, Page };
 export type { RemoteSession } from "./ichabod.js";
@@ -59,7 +61,11 @@ export interface Fox {
   extensionUrl(path?: string): string;
   /** Open a URL in a new tab and wait for its load event. */
   open(url: string): Promise<Page>;
-  /** Open an extension page in a new tab and wait until it is loaded. */
+  /**
+   * Open an extension page in a new tab and wait until it is loaded. In remote
+   * mode the page is in a frame that fills the tab, and part of the API goes
+   * through a relay: see "Extension pages on Ichabod" in the README.
+   */
   openExtensionPage(path: string, timeoutMs?: number): Promise<Page>;
   /** Close Firefox and delete the profile (remote: end the session). A second call does nothing. */
   close(): Promise<void>;
@@ -141,18 +147,72 @@ const openInTab: OpenPage = async (browser, url, timeoutMs) => {
   return page;
 };
 
-/** Remote mode: Ichabod's Firefox refuses moz-extension: pages. Say why at once, do not poll (R7). */
-const refuseExtensionPage: OpenPage = async (_browser, url) => {
-  throw new Error(`Ichabod's Firefox does not let WebDriver BiDi open ${url}: it runs without -remote-allow-system-access. Test the extension through a web page, or run this check locally.`);
-};
+/** Remote mode: the page in a frame on the frame host, which BiDi can script (R7). */
+const openInFrame =
+  (host: string): OpenPage =>
+  async (browser, url, timeoutMs) => {
+    const page = await browser.newPage();
+    await page.goto(`${host}/`, { waitUntil: "load" });
+    await page.evaluate((u: string) => {
+      const frame = document.createElement("iframe");
+      frame.allow = "microphone; camera; clipboard-read; clipboard-write; fullscreen";
+      frame.src = u;
+      document.body.append(frame);
+    }, url);
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      for (const frame of page.frames()) {
+        if (frame === page.mainFrame()) continue;
+        const loaded = await frame.evaluate((u: string) => location.href === u && document.readyState === "complete", url).catch(() => false);
+        if (loaded) return framedPage(page, frame, url);
+      }
+      if (Date.now() > deadline) throw new Error(`Timed out after ${timeoutMs} ms waiting for ${url} to load in the frame host. The page must be in the extension directory, and must not be a sandbox page.`);
+      await sleep(200);
+    }
+  };
+
+let frameHosts = 0;
+
+/** The frame host: a local page mounted on the shared tunnel. url rejects when the tunnel fails (F4). */
+function startFrameHost(): { url: Promise<string>; close: () => Promise<void> } {
+  const server = createServer((_, res) => {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }).end(HOST_PAGE);
+  });
+  const stop = new AbortController();
+  const opened = (async () => {
+    await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+    return mount((server.address() as AddressInfo).port, `frame-${++frameHosts}`, { signal: stop.signal });
+  })();
+  const url = opened.then((t) => t.url);
+  url.catch(() => {});
+  return {
+    url,
+    close: async () => {
+      stop.abort();
+      await (await opened.catch(() => undefined))?.close();
+      await new Promise<void>((done) => {
+        server.close(() => done());
+        server.closeAllConnections();
+      });
+    },
+  };
+}
 
 /** Start Firefox with a fresh profile and the extension installed as a temporary add-on. */
 export async function launch(options: LaunchOptions): Promise<Fox> {
   const extension = resolve(options.extension);
   const extensionId = geckoId(extension);
   if (browserMode(options.remote) === "ichabod") {
-    const remote = await connectIchabod({ ...options, extension });
-    return foxFor(remote.browser, remote.base, "", extensionId, remote.close, refuseExtensionPage);
+    checkRemote(options);
+    // The frame host mounts while the session connects; the install waits for its URL (F4).
+    const host = startFrameHost();
+    const remote = await connectIchabod({ ...options, extension, host: host.url }).catch(async (error: unknown) => {
+      await host.close();
+      throw error;
+    });
+    let closing: Promise<void> | undefined;
+    const close = () => (closing ??= remote.close().finally(host.close));
+    return foxFor(remote.browser, remote.base, "", extensionId, close, openInFrame(await host.url));
   }
   const executablePath = findFirefox(options.firefox);
   // A fixed UUID makes the moz-extension: URL known before the add-on loads.
