@@ -1,6 +1,6 @@
 {
   "name": "create-foxkit",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "The template for fox repos: shared CI, Firefox E2E tests, and npm release.",
   "type": "module",
   "license": "MIT",

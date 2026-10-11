@@ -11,8 +11,10 @@
 // - foxkit-relay.js, a background script: it runs those calls (F2) for this
 //   extension's pages framed on the frame host only (F3). Calls about "my
 //   tab" answer for the frame, and a host tab shows the framed URL (F7).
-// A granted namespace the relay does not cover throws (F6).
-// docs/failure-modes.md F1-F5.
+// A granted namespace the relay does not cover throws (F6). An argument
+// that cannot cross the port (a function) rejects and names the API (F8).
+// storage.session, which a framed page lacks, is relayed (F9).
+// docs/failure-modes.md F1-F9.
 import type { Frame, Page } from "puppeteer-core";
 
 export const SHIM_SCRIPT = "foxkit-frame.js";
@@ -26,10 +28,10 @@ const RELAYED_PERMISSIONS = ["alarms", "bookmarks", "browsingData", "contextualI
 /** Permission names that are not a namespace, or that a framed page already has. */
 const NOT_NAMESPACES = new Set(["storage", "unlimitedStorage", "activeTab", "webRequestBlocking", "nativeMessaging", "menus", "contextMenus", "clipboardRead", "clipboardWrite", "geolocation", "background", "declarativeNetRequestWithHostAccess", "declarativeNetRequestFeedback", "tabHide", "mozillaAddons"]);
 /** Constants a page reads without a call. */
-const CONSTANTS: Record<string, Record<string, number>> = { tabs: { TAB_ID_NONE: -1 }, windows: { WINDOW_ID_NONE: -1, WINDOW_ID_CURRENT: -2 } };
+const CONSTANTS: Record<string, Record<string, number>> = { tabs: { TAB_ID_NONE: -1 }, windows: { WINDOW_ID_NONE: -1, WINDOW_ID_CURRENT: -2 }, "storage.session": { QUOTA_BYTES: 10485760 } };
 
 export interface FramePlan {
-  /** Namespaces the shim fills with relayed calls. */
+  /** Namespaces the shim fills with relayed calls. A dotted name (storage.session) fills a member of a real namespace. */
   relayed: string[];
   /** Granted namespaces the shim does not relay: they throw on access (F6). */
   blocked: string[];
@@ -51,6 +53,8 @@ export function framePlan(manifest: Manifest): FramePlan {
     if (RELAYED_PERMISSIONS.includes(permission)) relayed.add(permission);
     else blocked.add(permission);
   }
+  // F9: a framed page has storage, but not storage.session.
+  if (manifest.permissions?.includes("storage")) relayed.add("storage.session");
   for (const ns of relayed) blocked.delete(ns);
   return { relayed: [...relayed].toSorted(), blocked: [...blocked].toSorted() };
 }
@@ -69,6 +73,21 @@ export function shimScript(plan: FramePlan, hostUrl: string): string {
   let seq = 0;
   let refused = "";
   const fail = (text) => new Error("create-foxkit frame relay: " + text);
+  // F8: the path of the first value a port cannot clone, or "".
+  const uncloneable = (value, at, seen = new Set()) => {
+    if (typeof value === "function") return at + " is a function";
+    if (typeof value === "symbol") return at + " is a symbol";
+    if (!value || typeof value !== "object" || seen.has(value)) return "";
+    seen.add(value);
+    if (typeof Node === "function" && value instanceof Node) return at + " is a DOM node";
+    if (typeof Window === "function" && value instanceof Window) return at + " is a window";
+    for (const [k, v] of Object.entries(value)) {
+      const found = uncloneable(v, at + (Array.isArray(value) ? "[" + k + "]" : "." + k), seen);
+      if (found) return found;
+    }
+    return "";
+  };
+  const crossFail = (name, found) => fail(name + ": " + found + ", and it cannot cross the frame relay to the background page. The background page cannot rebuild a function: Manifest V3 blocks eval there. For scripting.executeScript, pass files instead of func, or run this check locally (FOXKIT_BROWSER unset).");
   const connect = () => {
     if (port) return port;
     port = browser.runtime.connect({ name: C.port });
@@ -96,6 +115,8 @@ export function shimScript(plan: FramePlan, hostUrl: string): string {
     return {
       addListener(fn, ...extra) {
         if (typeof fn !== "function") throw fail(name + ".addListener needs a function.");
+        const found = uncloneable(extra, "extra");
+        if (found) throw crossFail("browser." + name + ".addListener", found);
         if (!events.has(name)) {
           events.set(name, new Set());
           send({ sub: name, ns, member, extra }).catch((error) => console.error(error));
@@ -113,12 +134,23 @@ export function shimScript(plan: FramePlan, hostUrl: string): string {
         if (typeof member !== "string" || member === "then") return undefined;
         const constants = C.constants[ns] || {};
         if (member in constants) return constants[member];
-        if (!made.has(member)) made.set(member, /^on[A-Z]/.test(member) ? event(ns, member) : (...args) => send({ call: true, ns, member, args }));
+        const call = (...args) => {
+          const found = uncloneable(args, "args");
+          return found ? Promise.reject(crossFail("browser." + ns + "." + member, found)) : send({ call: true, ns, member, args });
+        };
+        if (!made.has(member)) made.set(member, /^on[A-Z]/.test(member) ? event(ns, member) : call);
         return made.get(member);
       },
     });
   };
-  for (const ns of C.relayed) if (!(ns in browser)) browser[ns] = namespace(ns);
+  for (const ns of C.relayed) {
+    const [head, member] = ns.split(".");
+    if (!member) {
+      if (!(ns in browser)) browser[ns] = namespace(ns);
+    } else if (browser[head] && browser[head][member] == null) {
+      Object.defineProperty(browser[head], member, { configurable: true, enumerable: true, value: namespace(ns) });
+    }
+  }
   for (const ns of C.blocked) {
     if (ns in browser) continue;
     Object.defineProperty(browser, ns, { configurable: true, get() { throw fail("browser." + ns + " is granted but not relayed into a framed page. Run this check locally, or add the namespace to create-foxkit's frame relay."); } });
@@ -186,7 +218,8 @@ export function relayScript(plan: FramePlan, hostUrl: string): string {
       const name = "browser." + m.ns + "." + m.member;
       try {
         if (!C.relayed.includes(m.ns)) throw new Error("browser." + m.ns + " is not relayed.");
-        const target = browser[m.ns] && browser[m.ns][m.member];
+        const owner = m.ns.split(".").reduce((o, k) => (o ? o[k] : undefined), browser);
+        const target = owner && owner[m.member];
         if (m.sub) {
           if (!target || typeof target.addListener !== "function") throw new Error(name + " is not an event in this Firefox.");
           const fn = (...args) => port.postMessage({ event: m.sub, args: asFramed(args) });
@@ -195,8 +228,13 @@ export function relayScript(plan: FramePlan, hostUrl: string): string {
           port.postMessage({ id: m.id, value: true });
         } else if (m.call) {
           if (typeof target !== "function") throw new Error(name + " is not a function in this Firefox.");
-          const run = inContext(m, port.sender) || ((...args) => target.apply(browser[m.ns], args));
-          port.postMessage({ id: m.id, value: asFramed(await run(...m.args)) });
+          const run = inContext(m, port.sender) || ((...args) => target.apply(owner, args));
+          const value = asFramed(await run(...m.args));
+          try {
+            port.postMessage({ id: m.id, value });
+          } catch (error) {
+            throw new Error(name + ": the result cannot cross the frame relay: " + (error instanceof Error ? error.message : String(error)));
+          }
         }
       } catch (error) {
         const text = error instanceof Error ? error.message : String(error);

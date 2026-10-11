@@ -1,19 +1,19 @@
 {
-  "startedAt": "2026-10-11T07:02:08.399Z",
+  "startedAt": "2026-10-11T11:33:44.250Z",
   "steps": [
     {
       "name": "serve() returns a public URL on the shared tunnel",
       "ok": true,
       "detail": {
-        "ms": 9699,
-        "url": "https://removal-comments-internationally-wear.trycloudflare.com/_foxkit/1"
+        "ms": 5526,
+        "url": "https://hats-birmingham-incidents-permission.trycloudflare.com/_foxkit/1"
       }
     },
     {
       "name": "launch() connects to Ichabod and installs the extension",
       "ok": true,
       "detail": {
-        "ms": 797,
+        "ms": 686,
         "firefox": "firefox/157.0.1"
       }
     },
@@ -33,8 +33,8 @@
       "name": "R6 extensionUrl() has the real moz-extension: UUID",
       "ok": true,
       "detail": {
-        "real": "moz-extension://2b530d0f-0764-4cfd-9660-d286bbcaa24a/",
-        "extensionUrl": "moz-extension://2b530d0f-0764-4cfd-9660-d286bbcaa24a/"
+        "real": "moz-extension://52594da3-c4bd-4077-bdf0-6cee3c1111b8/",
+        "extensionUrl": "moz-extension://52594da3-c4bd-4077-bdf0-6cee3c1111b8/"
       }
     },
     {
@@ -45,7 +45,7 @@
       "name": "R7 openExtensionPage() opens the extension page in a frame BiDi can script",
       "ok": true,
       "detail": {
-        "ms": 930
+        "ms": 694
       }
     },
     {
@@ -57,14 +57,14 @@
       "ok": true,
       "detail": [
         "about:blank",
-        "https://removal-comments-internationally-wear.trycloudflare.com/_foxkit/1/index.html",
-        "moz-extension://2b530d0f-0764-4cfd-9660-d286bbcaa24a/page.html"
+        "https://hats-birmingham-incidents-permission.trycloudflare.com/_foxkit/1/index.html",
+        "moz-extension://52594da3-c4bd-4077-bdf0-6cee3c1111b8/page.html"
       ]
     },
     {
       "name": "F7 tabs.getCurrent() is the frame's tab, with the extension page URL",
       "ok": true,
-      "detail": "moz-extension://2b530d0f-0764-4cfd-9660-d286bbcaa24a/page.html"
+      "detail": "moz-extension://52594da3-c4bd-4077-bdf0-6cee3c1111b8/page.html"
     },
     {
       "name": "F2 a relayed event (tabs.onCreated) reaches the page",
@@ -87,6 +87,19 @@
       "detail": "create-foxkit frame relay: browser.privacy is granted but not relayed into a framed page. Run this check locally, or add the namespace to create-foxkit's frame relay."
     },
     {
+      "name": "F9 storage.session in the framed page is the real session area",
+      "ok": true,
+      "detail": {
+        "own": "framed",
+        "background": "framed"
+      }
+    },
+    {
+      "name": "F8 a function argument rejects and names the API and the argument",
+      "ok": true,
+      "detail": "create-foxkit frame relay: browser.scripting.executeScript: args[0].func is a function, and it cannot cross the frame relay to the background page. The background page cannot rebuild a function: Manifest V3 blocks eval there. For scripting.executeScript, pass files instead of func, or run this check locally (FOXKIT_BROWSER unset)."
+    },
+    {
       "name": "a click in the framed page works",
       "ok": true
     },
@@ -97,7 +110,7 @@
     {
       "name": "F3 the relay refuses the extension page framed on a test site of the same tunnel",
       "ok": true,
-      "detail": "create-foxkit frame relay: the relay answers only this extension's pages framed on https://removal-comments-internationally-wear.trycloudflare.com/_foxkit/frame-1."
+      "detail": "create-foxkit frame relay: the relay answers only this extension's pages framed on https://hats-birmingham-incidents-permission.trycloudflare.com/_foxkit/frame-1."
     },
     {
       "name": "R4 R5 a failed install throws without the key (the script exits, so the session closed)",
@@ -118,17 +131,17 @@
       "detail": [
         {
           "service": "ichabod",
-          "sessionId": "9fd58e3e-85d7-4c8f-b02f-83def7cd3ad3",
+          "sessionId": "4a46806a-286a-4c80-9aee-d1e21d29017e",
           "firefox": "firefox/157.0.1",
           "recorded": true,
-          "startedAt": "2026-10-11T07:02:18.533Z"
+          "startedAt": "2026-10-11T11:33:50.272Z"
         },
         {
           "service": "ichabod",
-          "sessionId": "489dee5b-7ac8-44f7-859c-b55b8e82aae6",
+          "sessionId": "87faf485-2e50-491e-b22d-bffc38cf0af8",
           "firefox": "firefox/157.0.1",
           "recorded": true,
-          "startedAt": "2026-10-11T07:02:23.232Z"
+          "startedAt": "2026-10-11T11:33:54.486Z"
         }
       ]
     },
@@ -142,17 +155,17 @@
   "ichabod": [
     {
       "service": "ichabod",
-      "sessionId": "9fd58e3e-85d7-4c8f-b02f-83def7cd3ad3",
+      "sessionId": "4a46806a-286a-4c80-9aee-d1e21d29017e",
       "firefox": "firefox/157.0.1",
       "recorded": true,
-      "startedAt": "2026-10-11T07:02:18.533Z"
+      "startedAt": "2026-10-11T11:33:50.272Z"
     },
     {
       "service": "ichabod",
-      "sessionId": "489dee5b-7ac8-44f7-859c-b55b8e82aae6",
+      "sessionId": "87faf485-2e50-491e-b22d-bffc38cf0af8",
       "firefox": "firefox/157.0.1",
       "recorded": true,
-      "startedAt": "2026-10-11T07:02:23.232Z"
+      "startedAt": "2026-10-11T11:33:54.486Z"
     }
   ]
 }
