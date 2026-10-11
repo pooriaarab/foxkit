@@ -66,6 +66,7 @@ src/cli.ts        the create-foxkit command (bin)
 src/scaffold.ts   copies template/ into a new repo and fills placeholders
 src/e2e.ts        the Firefox E2E harness, exported as create-foxkit/e2e
 src/mode.ts       FOXKIT_BROWSER: the local Firefox or Ichabod
+src/ichabod.ts    remote mode: a Firefox on Ichabod instead of a local one
 src/tunnel.ts     the one shared Cloudflare quick tunnel for cloud browsers
 template/base/    files every new repo gets
 template/extension/  extra files for --extension
