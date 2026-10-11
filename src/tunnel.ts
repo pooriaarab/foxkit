@@ -36,6 +36,8 @@ export interface Tunnel {
 }
 
 export const PREFIX = "/_foxkit/";
+/** The gateway answers 200 here, so a 200 through Cloudflare proves the tunnel reaches it (T2). */
+const READY = "/_foxkit-ready";
 const TRIES = 3;
 const URL_PATTERN = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/;
 const open = new Set<ChildProcess>();
@@ -127,9 +129,10 @@ async function attempt(binary: string, port: number, timeoutMs: number, signal?:
   const aborted = () => signal?.aborted === true;
   while (Date.now() < deadline && child.exitCode === null && !state.missing && !aborted()) {
     const url = state.url;
-    // 530 is Cloudflare's "tunnel not connected yet", 502 is "no local server".
-    const code = url ? await status(url) : 0;
-    if (url && code !== 0 && code !== 530 && code !== 502) return { child, url };
+    // Only the gateway answers 200 on READY. Cloudflare answers 530 before the
+    // tunnel connects, and 502 or 52x while it cannot reach the gateway.
+    const code = url ? await status(`${url}${READY}`) : 0;
+    if (code === 200) return { child, url };
     await sleep(500);
   }
   await stop(child);
@@ -192,6 +195,10 @@ function relocate(location: string, id: string, port: number, origin: string): s
 
 function forward(origin: () => string) {
   return (req: IncomingMessage, res: ServerResponse) => {
+    if (req.url === READY) {
+      res.writeHead(200, { "content-type": "text/plain", "cache-control": "no-store" }).end("ready");
+      return;
+    }
     const target = route(req);
     if (!target) {
       res.writeHead(404, { "content-type": "text/plain" }).end("No server is mounted at this path.");
