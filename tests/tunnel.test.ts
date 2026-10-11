@@ -117,10 +117,12 @@ describe("starting the shared tunnel", () => {
     probe.code = 530;
     const stop = new AbortController();
     const started = tunnel(8080, { cloudflared: fake(OPENS), signal: stop.signal });
-    setTimeout(() => stop.abort(), 300);
+    // Abort once cloudflared runs, not after a fixed time: a slow spawn would abort before the PID is written.
+    await vi.waitFor(() => expect(pids().filter(alive)).toHaveLength(1), { timeout: 10_000, interval: 10 });
+    stop.abort();
     await expect(started).rejects.toThrow("stopped before it opened");
     expect(pids().filter(alive)).toEqual([]);
-  });
+  }, 20_000);
 });
 
 describe("T4 one tunnel per process", () => {
