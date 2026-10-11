@@ -241,7 +241,8 @@ background page:
 
 | Namespace | In a framed page |
 |---|---|
-| `runtime`, `storage`, `i18n` | Real. |
+| `runtime`, `storage`, `i18n` | Real, except `storage.session`. |
+| `storage.session` | Relayed when `permissions` lists `storage`: calls, `onChanged` and `QUOTA_BYTES`. |
 | `tabs`, `windows`, `permissions` | Relayed: calls and `on*` events. |
 | `action`, `sidebarAction`, `browserAction`, `pageAction` | Relayed when the manifest has the key. |
 | `alarms`, `bookmarks`, `browsingData`, `contextualIdentities`, `cookies`, `downloads`, `history`, `notifications`, `scripting`, `sessions`, `topSites`, `webNavigation` | Relayed when `permissions` lists them. |
@@ -255,8 +256,13 @@ background page:
   answer for the frame's tab. In relayed results and events, that tab has
   the extension page URL, as it would for a user. The background page's own
   `tabs` calls still see the frame host URL.
-- Arguments and results must be cloneable: a relayed call cannot take a
-  function. `typeof browser.tabs.anyName` is `"function"`; the call rejects
+- Arguments and results must be cloneable. A relayed call that gets a
+  function, a symbol or a DOM node rejects before it is sent, and the error
+  names the API and the argument, for example
+  `browser.scripting.executeScript: args[0].func is a function`. The
+  background page cannot rebuild a function: Manifest V3 blocks `eval`
+  there. Pass `files` to `scripting.executeScript`, or run that check
+  locally. `typeof browser.tabs.anyName` is `"function"`; the call rejects
   when the member does not exist.
 - The relay covers `browser.*`, not `chrome.*`.
 - The extension pages are web accessible to the tunnel origin. Firefox
