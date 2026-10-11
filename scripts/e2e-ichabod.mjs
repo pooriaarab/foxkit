@@ -36,13 +36,13 @@ writeFileSync(join(extension, "manifest.json"), JSON.stringify({
   name: "foxkit remote fixture",
   version: "1.0",
   browser_specific_settings: { gecko: { id: "remote-fixture@foxkit" } },
-  permissions: ["tabs", "storage", "privacy"],
+  permissions: ["tabs", "storage", "scripting", "privacy"],
   host_permissions: ["<all_urls>"],
   background: { scripts: ["bg.js"] },
   content_scripts: [{ matches: ["<all_urls>"], js: ["content.js"] }],
 }));
 writeFileSync(join(extension, "content.js"), 'document.documentElement.dataset.foxkit = browser.runtime.getURL("");\n');
-writeFileSync(join(extension, "bg.js"), 'browser.runtime.onMessage.addListener((m) => (m === "ping" ? Promise.resolve("pong") : undefined));\n');
+writeFileSync(join(extension, "bg.js"), 'browser.runtime.onMessage.addListener((m) => (m === "ping" ? Promise.resolve("pong") : m === "session" ? browser.storage.session.get("s") : undefined));\n');
 writeFileSync(join(extension, "page.html"), '<!doctype html><title>fixture page</title><button id="b">press</button><script src="page.js"></script>\n');
 writeFileSync(join(extension, "page.js"), 'document.getElementById("b").addEventListener("click", (e) => { e.target.textContent = "pressed"; });\nwindow.created = [];\nbrowser.tabs.onCreated.addListener((tab) => window.created.push(tab.id));\n');
 writeFileSync(join(site, "index.html"), "<!doctype html><title>foxkit remote</title><h1>Remote</h1>\n");
@@ -90,6 +90,13 @@ try {
     }
   });
   check("F6 a granted namespace the relay does not cover throws", /browser.privacy is granted but not relayed/.test(blocked), blocked);
+  const session = await ext.evaluate(async () => {
+    await browser.storage.session.set({ s: "framed" });
+    return { own: (await browser.storage.session.get("s")).s, background: (await browser.runtime.sendMessage("session")).s };
+  });
+  check("F9 storage.session in the framed page is the real session area", session.own === "framed" && session.background === "framed", session);
+  const func = await ext.evaluate(() => browser.scripting.executeScript({ target: { tabId: 1 }, func: () => 1 }).then(() => "answered", (e) => e.message));
+  check("F8 a function argument rejects and names the API and the argument", /browser\.scripting\.executeScript: args\[0\]\.func is a function/.test(func), func);
   await ext.click("#b");
   check("a click in the framed page works", (await ext.evaluate(() => document.getElementById("b").textContent)) === "pressed");
   check("a screenshot of the framed page works", (await ext.screenshot()).length > 1000);
