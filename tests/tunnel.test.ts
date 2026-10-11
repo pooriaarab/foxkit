@@ -159,5 +159,19 @@ describe("T5 the gateway routes by mount", () => {
     server.close();
   });
 
-
+  it("T6 sends a navigation routed by its Referer back under the mount, and forwards anything else", async () => {
+    process.env.CLOUDFLARED = fake(OPENS);
+    const { port, server } = await echo();
+    const t = await tunnel(port);
+    const path = new URL(t.url).pathname;
+    const referer = `${t.url}/flights/`;
+    // A link or a form to /flights/results: the page URL must keep the prefix, or its next absolute link has no mount.
+    expect(await get("/flights/results?from=YYZ", { referer, "sec-fetch-mode": "navigate" })).toMatchObject({ status: 307, location: `${path}/flights/results?from=YYZ` });
+    // A script, a style or a fetch from that page is forwarded at once.
+    expect(await get("/app.js", { referer, "sec-fetch-mode": "no-cors" })).toMatchObject({ status: 200, body: `127.0.0.1:${port} /app.js` });
+    // A navigation that already has the prefix, or that no mount claims, does not change.
+    expect(await get(`${path}/flights/book`, { "sec-fetch-mode": "navigate" })).toMatchObject({ status: 200, body: `127.0.0.1:${port} /flights/book` });
+    expect((await get("/flights/book", { "sec-fetch-mode": "navigate" })).status).toBe(404);
+    server.close();
+  });
 });
