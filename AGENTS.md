@@ -73,6 +73,7 @@ template/base/    files every new repo gets
 template/extension/  extra files for --extension
 tests/            isolated tests for the failure modes in docs/failure-modes.md
 scripts/e2e.mjs   the main E2E: scaffold, install, ci:local, Firefox
+scripts/e2e-ichabod.mjs  the remote-mode E2E against Ichabod
 ```
 
 ## Commands

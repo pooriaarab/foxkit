@@ -164,8 +164,10 @@ All exports come from `create-foxkit/e2e`.
 |---|---|
 | `launch(options)` | Starts Firefox with a new profile and installs the extension as a temporary add-on. Returns a `Fox`. |
 | `poll(page, fn, arg?, timeoutMs = 30000)` | Runs `fn(arg)` in the page until it returns a truthy value, and returns that value. Throws after the timeout. |
-| `serve(dir)` | Serves a directory on `http://127.0.0.1:<free port>`. Returns `{ url, close }`. Paths outside the directory get 404. |
-| `writeArtifact(dir, name, data)` | Writes `data` as JSON to `<dir>/<name>-<YYYY-MM-DD>.json` (UTC date) and returns the path. |
+| `serve(dir, { tunnel? })` | Serves a directory on `http://127.0.0.1:<free port>`. Returns `{ url, close }`. Paths outside the directory get 404. In remote mode, `url` is a public URL on the shared tunnel. |
+| `tunnel(port, { cloudflared?, timeoutMs?, signal? })` | Mounts `http://127.0.0.1:<port>` on the shared quick tunnel. Returns `{ url, close }`; `url` is `https://<random>.trycloudflare.com/_foxkit/<id>`. |
+| `closeTunnels()` | Stops the shared tunnel now, instead of at process exit. |
+| `writeArtifact(dir, name, data)` | Writes `data` as JSON to `<dir>/<name>-<YYYY-MM-DD>.json` (UTC date) and returns the path. After a remote run, it adds the Ichabod sessions. It replaces `ICHABOD_API_KEY` with `***`. |
 | `findFirefox(path?)` | Returns the Firefox binary: `path`, then `FIREFOX`, then the usual install paths. Throws when there is none. |
 
 `launch(options)` takes these options:
@@ -175,7 +177,9 @@ All exports come from `create-foxkit/e2e`.
 | `extension` | The extension directory. Its `manifest.json` must set `browser_specific_settings.gecko.id`. Required. |
 | `firefox` | The Firefox binary. See `findFirefox`. |
 | `headless` | Run with no window. The default is `true`. |
-| `prefs` | More Firefox preferences. |
+| `prefs` | More Firefox preferences. Remote mode refuses it. |
+| `remote` | `"ichabod"` or `"local"`. The default is `FOXKIT_BROWSER`, then `"local"`. |
+| `record` | Remote mode only. Record the session to video. The default is `true`. |
 
 A `Fox` has these members:
 
@@ -186,8 +190,102 @@ A `Fox` has these members:
 | `extensionId` | The gecko ID from the manifest. |
 | `extensionUrl(path?)` | Returns `moz-extension://<uuid>/<path>`. |
 | `open(url)` | Opens the URL in a new tab, waits for the load event, and returns the Puppeteer `Page`. |
-| `openExtensionPage(path, timeoutMs = 30000)` | Opens an extension page in a new tab and polls until it is loaded. |
+| `openExtensionPage(path, timeoutMs = 30000)` | Opens an extension page in a new tab and polls until it is loaded. In remote mode the page is in a frame: see "Extension pages on Ichabod". |
 | `close()` | Stops Firefox and deletes the profile. A second call does nothing. |
+
+### Remote mode (Ichabod)
+
+Set `FOXKIT_BROWSER=ichabod` and `ICHABOD_API_KEY` to run a test on a Firefox
+on Ichabod, Mozilla's cloud browser service, instead of this computer. The
+test code does not change:
+
+- `launch()` connects over WebDriver BiDi and installs the extension as
+  base64 data. It sends the key in a header, never in a URL.
+- `serve()` gives the pages a public URL, so the cloud browser can load
+  them. It needs `cloudflared` (`brew install cloudflared`).
+- `writeArtifact()` records the BiDi session ID, so a PR can point to the
+  recording on the Ichabod console.
+
+`FOXKIT_BROWSER` accepts `ichabod` and `local` only. Any other value stops the
+test, so a typo never runs it on the local Firefox. `ICHABOD_HOST` and
+`ICHABOD_GECKO` (default `latest`) choose the service host and the Gecko
+version.
+
+Ichabod's Firefox runs without `-remote-allow-system-access`, so remote mode
+has limits:
+
+- `prefs`, `firefox` and `headless: false` throw: Ichabod cannot set them.
+- A server that a test starts itself on `127.0.0.1` is not reachable. Give
+  it a public URL with `tunnel(port)`. A content script or host permission
+  that matches only `127.0.0.1` does not match the tunnel host.
+- To find the extension UUID, the installed copy gets one more background
+  script. It opens `foxkit-uuid.html` once, in a background tab, and
+  `launch()` closes that tab.
+- A page that the extension opens in a tab itself (`tabs.create`) is not
+  reachable. Open it with `openExtensionPage()` instead.
+
+#### Extension pages on Ichabod
+
+BiDi cannot script or capture a `moz-extension:` page in a tab there, but it
+can when the page is in an iframe on an https page. So `openExtensionPage()`
+opens a frame host page (a local page that `launch()` mounts on the shared
+tunnel) and loads the extension page in an iframe that fills the tab. It returns a
+`Page`: `evaluate`, `$`, `click`, `type`, `waitForSelector` and the other DOM
+calls go to the frame; `screenshot`, `bringToFront`, `close`, `keyboard` and
+`mouse` go to the tab. `url()` returns the extension URL it opened.
+
+A framed extension page gets the real `runtime`, `storage` and `i18n`, and
+the real page code, origin and CSP. Firefox gives it no other namespaces.
+The installed copy fills those that the manifest grants with a relay to the
+background page:
+
+| Namespace | In a framed page |
+|---|---|
+| `runtime`, `storage`, `i18n` | Real. |
+| `tabs`, `windows`, `permissions` | Relayed: calls and `on*` events. |
+| `action`, `sidebarAction`, `browserAction`, `pageAction` | Relayed when the manifest has the key. |
+| `alarms`, `bookmarks`, `browsingData`, `contextualIdentities`, `cookies`, `downloads`, `history`, `notifications`, `scripting`, `sessions`, `topSites`, `webNavigation` | Relayed when `permissions` lists them. |
+| Any other granted namespace (`webRequest`, `proxy`, `privacy` ...) | Throws on access, and names the namespace. |
+| `extension.getViews()` | `[]` for `{ type: "sidebar" }` and `{ type: "popup" }`; throws for any other filter. |
+
+- A relayed call runs in the background page. A call that needs a user
+  gesture, such as `permissions.request()` or `sidebarAction.open()`, fails,
+  and the error says so.
+- `tabs.getCurrent()`, `windows.getCurrent()` and `currentWindow: true`
+  answer for the frame's tab. In relayed results and events, that tab has
+  the extension page URL, as it would for a user. The background page's own
+  `tabs` calls still see the frame host URL.
+- Arguments and results must be cloneable: a relayed call cannot take a
+  function. `typeof browser.tabs.anyName` is `"function"`; the call rejects
+  when the member does not exist.
+- The relay covers `browser.*`, not `chrome.*`.
+- The extension pages are web accessible to the tunnel origin. Firefox
+  matches that by origin only, so a test site on the tunnel can frame a
+  page, but the relay answers only this extension's pages framed in a tab
+  on the frame host path. It uses a port
+  named `foxkit-relay`: an extension whose `runtime.onConnect` listener does
+  not check `port.name` sees it.
+- Remote mode needs Manifest V3: only V3 can limit web accessible pages to
+  one origin.
+
+A process opens one Cloudflare quick tunnel, whatever the number of
+servers: Cloudflare refuses quick tunnels with HTTP 429 after about 15 in a
+short time. The tunnel points at a local gateway, and `serve()`, `tunnel()`
+and the frame host each mount at `/_foxkit/<id>/`:
+
+- The gateway strips the prefix before it forwards. A request for an
+  absolute path such as `/app.js` goes to the mount that its `Referer`
+  names, and a redirect to `/path` gets the prefix back.
+- All mounts share one origin. A check that needs two sites on different
+  origins, or a host name such as `bank.localhost`, must run locally.
+- WebSocket upgrades are not forwarded.
+- `close()` unmounts at once. The tunnel does not keep the process alive,
+  and it stops at process exit or at `closeTunnels()`.
+
+> **Warning:** a mounted server is public at a random URL until
+> `close()`. Anyone with the URL reaches it. For a model server, start it
+> with its own key, for example `llama-server --api-key <key>`, and send
+> that key from the test.
 
 A function that you give to `poll()` or `page.evaluate()` runs in the page,
 not in Node. It cannot use variables from outside it. Pass values through
@@ -201,7 +299,10 @@ foxkit has a CLI (`create-foxkit`) and a library. It has no MCP server.
 |---|---|---|
 | WebDriver BiDi `webExtension.install` | [webExtension](https://developer.mozilla.org/en-US/docs/Web/WebDriver/Reference/BiDi/Modules/webExtension) | `launch()` installs the extension as a temporary add-on. |
 | WebDriver BiDi `script` module | [script](https://developer.mozilla.org/en-US/docs/Web/WebDriver/Reference/BiDi/Modules/script) | `poll()` and `page.evaluate()` run functions in a page. |
-| `-remote-allow-system-access` command-line flag | No MDN page | Lets BiDi reach `moz-extension:` pages. |
+| `-remote-allow-system-access` command-line flag | No MDN page | Lets BiDi reach `moz-extension:` pages. Ichabod does not set it. |
+| `web_accessible_resources` with `matches` | [web_accessible_resources](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/web_accessible_resources) | Remote mode lets pages on the tunnel origin, and no other, frame the extension pages. |
+| `runtime.connect` and `runtime.onConnect` | [runtime.connect](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/connect) | The frame relay sends calls and events between a framed page and the background page. |
+| WebDriver BiDi `browsingContext.getTree` and `browsingContext.close` | [browsingContext](https://developer.mozilla.org/en-US/docs/Web/WebDriver/Reference/BiDi/Modules/browsingContext) | Remote mode reads the extension UUID from a tab URL, then closes the tab. |
 | `extensions.webextensions.uuids` preference | No MDN page | Fixes the extension UUID, so the `moz-extension:` URL is known before the add-on loads. |
 | `browser_specific_settings` (`gecko.id`, `data_collection_permissions`) | [browser_specific_settings](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/browser_specific_settings) | The demo extension needs an ID and Firefox 153 (the current ESR). AMO requires the data collection key for new extensions. |
 | `background.scripts` | [background](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/background) | The demo extension's background script (an event page). |
@@ -261,9 +362,11 @@ flowchart LR
 pnpm install
 pnpm ci:local   # lint, typecheck, test, build
 pnpm e2e        # scaffolds two repos and runs their checks and Firefox E2E
+pnpm e2e:ichabod  # remote mode against Ichabod; needs ICHABOD_API_KEY and cloudflared
 ```
 
-`pnpm e2e` writes `artifacts/e2e-<date>.json`. Set `FIREFOX` when Firefox is
+`pnpm e2e` writes `artifacts/e2e-<date>.json`, and `pnpm e2e:ichabod` writes
+`artifacts/e2e-ichabod-<date>.json`. Set `FIREFOX` when Firefox is
 not in the usual place.
 
 ## License
