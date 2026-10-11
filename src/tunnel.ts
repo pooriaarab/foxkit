@@ -5,7 +5,9 @@
 // 15. It points at a local gateway, and tunnel() mounts at /_foxkit/<id>/.
 // The gateway strips the prefix before it forwards. A request without the
 // prefix goes to the server its Referer names, and a redirect to /path gets
-// the prefix back, so pages that use absolute paths keep working (T5).
+// the prefix back, so pages that use absolute paths keep working (T5). A
+// navigation routed by its Referer is sent back under the mount (307), so
+// the next page keeps the prefix for its own links (T6).
 // All mounted servers share one origin. WebSocket upgrades are not forwarded.
 //
 // WARNING: anyone who has the URL reaches the mounted servers until close().
@@ -157,8 +159,8 @@ const routes = new Map<string, number>();
 let shared: Promise<{ origin: string; stop: () => Promise<void> }> | undefined;
 let nextId = 1;
 
-/** The mount, and the path to forward, for a request (T5). Undefined: answer 404. */
-function route(req: IncomingMessage): { id: string; port: number; path: string } | undefined {
+/** The mount, and the path to forward, for a request (T5). byReferer: no prefix, the Referer named the mount. Undefined: answer 404. */
+function route(req: IncomingMessage): { id: string; port: number; path: string; byReferer?: true } | undefined {
   const url = req.url ?? "/";
   const q = url.indexOf("?");
   const [pathname, query] = q < 0 ? [url, ""] : [url.slice(0, q), url.slice(q)];
@@ -177,7 +179,7 @@ function route(req: IncomingMessage): { id: string; port: number; path: string }
   }
   const from = /^\/_foxkit\/([a-z0-9-]+)\//.exec(referer)?.[1];
   const port = from === undefined ? undefined : routes.get(from);
-  return from === undefined || port === undefined ? undefined : { id: from, port, path: url };
+  return from === undefined || port === undefined ? undefined : { id: from, port, path: url, byReferer: true };
 }
 
 /** A Location header the browser can follow: /path gets the mount prefix, a local URL becomes public. */
@@ -193,6 +195,12 @@ function forward(origin: () => string) {
     const target = route(req);
     if (!target) {
       res.writeHead(404, { "content-type": "text/plain" }).end("No server is mounted at this path.");
+      return;
+    }
+    // T6: a page reached without the prefix would send a Referer with no mount from its own links.
+    if (target.byReferer && req.headers["sec-fetch-mode"] === "navigate") {
+      res.writeHead(307, { location: `${PREFIX}${target.id}${target.path}`, "cache-control": "no-store" }).end();
+      req.resume();
       return;
     }
     const upstream = httpRequest({ host: "127.0.0.1", port: target.port, method: req.method, path: target.path, headers: { ...req.headers, host: `127.0.0.1:${target.port}`, "x-forwarded-prefix": `${PREFIX}${target.id}` } }, (answer) => {

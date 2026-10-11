@@ -46,6 +46,9 @@ writeFileSync(join(extension, "bg.js"), 'browser.runtime.onMessage.addListener((
 writeFileSync(join(extension, "page.html"), '<!doctype html><title>fixture page</title><button id="b">press</button><script src="page.js"></script>\n');
 writeFileSync(join(extension, "page.js"), 'document.getElementById("b").addEventListener("click", (e) => { e.target.textContent = "pressed"; });\nwindow.created = [];\nbrowser.tabs.onCreated.addListener((tab) => window.created.push(tab.id));\n');
 writeFileSync(join(site, "index.html"), "<!doctype html><title>foxkit remote</title><h1>Remote</h1>\n");
+// T6: two hops of absolute links; the second one fails if the first page lost the mount path.
+writeFileSync(join(site, "hop1.html"), '<!doctype html><title>hop 1</title><a id="next" href="/hop2.html?from=1">next</a>\n');
+writeFileSync(join(site, "hop2.html"), "<!doctype html><title>hop 2</title>\n");
 
 const before = tunnels();
 let server;
@@ -65,6 +68,14 @@ try {
 
   const page = await fox.open(`${server.url}/index.html`);
   check("the cloud browser loads the page through the tunnel", (await page.title()) === "foxkit remote");
+  await page.evaluate(() => {
+    const a = Object.assign(document.createElement("a"), { id: "hop", href: "/hop1.html", textContent: "hop" });
+    document.body.append(a);
+  });
+  await Promise.all([page.waitForNavigation(), page.click("#hop")]);
+  await Promise.all([page.waitForNavigation(), page.click("#next")]);
+  const hop = { title: await page.title(), path: new URL(page.url()).pathname };
+  check("T6 two hops of absolute links keep the mount path", hop.title === "hop 2" && hop.path === `${new URL(server.url).pathname}/hop2.html`, hop);
   const real = await poll(page, () => document.documentElement.dataset.foxkit, undefined, 15_000);
   check("R6 extensionUrl() has the real moz-extension: UUID", real === fox.extensionUrl(), { real, extensionUrl: fox.extensionUrl() });
   check("a screenshot of a web page works", (await page.screenshot()).length > 1000);
