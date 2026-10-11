@@ -1,4 +1,4 @@
-// Tests for the frame host that need no network: F1-F3, F6, F7 and R9 in
+// Tests for the frame host that need no network: F1-F3, F6-F9 and R9 in
 // docs/failure-modes.md. The shim and the relay run in node:vm with a fake
 // browser object. scripts/e2e-ichabod.mjs runs them in a real Firefox.
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -28,32 +28,49 @@ function portPair(name: string, sender: object) {
   const bgIn = listeners();
   const pageGone = listeners();
   const bgGone = listeners();
-  const page = { name, onMessage: pageIn, onDisconnect: pageGone, postMessage: (m: unknown) => queueMicrotask(() => bgIn.emit(clone(m))) };
-  const bg = { name, sender, onMessage: bgIn, onDisconnect: bgGone, postMessage: (m: unknown) => queueMicrotask(() => pageIn.emit(clone(m))), disconnect: () => queueMicrotask(() => pageGone.emit()) };
+  // Like Firefox, postMessage clones at once, so a value it cannot clone throws in the caller.
+  const post = (to: ReturnType<typeof listeners>) => (m: unknown) => {
+    const copy = clone(m);
+    queueMicrotask(() => to.emit(copy));
+  };
+  const page = { name, onMessage: pageIn, onDisconnect: pageGone, postMessage: post(bgIn) };
+  const bg = { name, sender, onMessage: bgIn, onDisconnect: bgGone, postMessage: post(pageIn), disconnect: () => queueMicrotask(() => pageGone.emit()) };
   return { page, bg };
 }
 
 /** A fake background page with the relay script loaded, and a framed page with the shim. */
-function setup({ top = false, ancestor = ORIGIN, sender = {} as Record<string, unknown>, has = [] as string[] } = {}) {
+function setup({ top = false, ancestor = ORIGIN, sender = {} as Record<string, unknown>, has = [] as string[], session = false, framePlanned = plan } = {}) {
   const onConnect = listeners();
   const onUpdated = listeners();
+  const onSessionChanged = listeners();
+  const sessionData: Record<string, unknown> = {};
   const calls: unknown[][] = [];
   const bgBrowser = {
     runtime: { id: "a@b", getURL: (p: string) => BASE + p, onConnect },
     tabs: {
       query: async (q: unknown) => (calls.push(["tabs.query", q]), [{ id: 7, url: "https://x.test/" }, { id: 1, windowId: 3, url: `${HOST}/` }]),
-      get: async (id: number) => ({ id, windowId: 3, url: id === 1 ? `${HOST}/` : "https://x.test/" }),
+      get: async (id: number) => (id === 99 ? { id, windowId: 3, url: "https://x.test/", run: () => 0 } : { id, windowId: 3, url: id === 1 ? `${HOST}/` : "https://x.test/" }),
       getCurrent: async () => undefined,
       onUpdated,
     },
     windows: { get: async (id: number, info: unknown) => (calls.push(["windows.get", id, info]), { id }), getCurrent: async () => ({ id: 99 }) },
+    storage: {
+      session: {
+        get: async (key: string) => (calls.push(["storage.session.get", key]), { [key]: sessionData[key] }),
+        set: async (items: Record<string, unknown>) => {
+          Object.assign(sessionData, items);
+          onSessionChanged.emit(Object.fromEntries(Object.entries(items).map(([k, v]) => [k, { newValue: v }])));
+        },
+        onChanged: onSessionChanged,
+      },
+    },
     permissions: {
       request: async () => {
         throw new Error("permissions.request may only be called from a user input handler");
       },
     },
   };
-  runInNewContext(relayScript(plan, HOST), { browser: bgBrowser, URL });
+  runInNewContext(relayScript(framePlanned, HOST), { browser: bgBrowser, URL });
   const fullSender = { id: "a@b", url: `${BASE}app.html`, frameId: 5, tab: { id: 1, windowId: 3, url: `${HOST}/` }, ...sender };
   const pageBrowser: Record<string, unknown> = {
     runtime: { connect: ({ name }: { name: string }) => {
@@ -61,21 +78,21 @@ function setup({ top = false, ancestor = ORIGIN, sender = {} as Record<string, u
       onConnect.emit(bg);
       return page;
     } },
-    storage: { local: {} },
+    storage: session ? { local: {}, session: { real: true } } : { local: {} },
     extension: {},
   };
   for (const ns of has) pageBrowser[ns] = { real: true };
   const window: Record<string, unknown> = {};
   window.top = top ? window : {};
-  runInNewContext(shimScript(plan, HOST), { browser: pageBrowser, window, location: { ancestorOrigins: [ancestor] }, console });
+  runInNewContext(shimScript(framePlanned, HOST), { browser: pageBrowser, window, location: { ancestorOrigins: [ancestor] }, console });
   return { browser: pageBrowser as Record<string, any>, calls, onUpdated };
 }
 
 describe("F1 the shim adds only what the real page has and the frame lacks", () => {
   it("fills tabs, windows, permissions, sidebarAction and the granted notifications in a frame, and nothing else", () => {
-    expect(plan.relayed).toEqual(["notifications", "permissions", "sidebarAction", "tabs", "windows"]);
+    expect(plan.relayed).toEqual(["notifications", "permissions", "sidebarAction", "storage.session", "tabs", "windows"]);
     const { browser } = setup();
-    for (const ns of plan.relayed) expect(typeof browser[ns]).toBe("object");
+    for (const ns of plan.relayed) expect(typeof ns.split(".").reduce((o, k) => o[k], browser)).toBe("object");
     for (const ns of ["alarms", "cookies", "action", "bookmarks"]) expect(ns in browser).toBe(false);
     expect(browser.tabs.TAB_ID_NONE).toBe(-1);
     expect(browser.tabs.then).toBeUndefined();
@@ -163,6 +180,56 @@ describe("F7 calls that depend on the caller's tab answer for the framed page", 
     await browser.tabs.query({ active: true, currentWindow: true });
     await expect(browser.windows.getCurrent({ populate: false })).resolves.toEqual({ id: 3 });
     expect(calls).toEqual([["tabs.query", { active: true, windowId: 3 }], ["windows.get", 3, { populate: false }]]);
+  });
+});
+
+describe("F8 an argument that cannot cross the relay fails loudly and names the API", () => {
+  it("rejects a function argument before it posts, with the API, the argument path and what to do instead", async () => {
+    const { browser, calls } = setup();
+    const call = browser.tabs.query({ active: true, filter: () => true });
+    await expect(call).rejects.toThrow(/browser\.tabs\.query: args\[0\]\.filter is a function/);
+    await expect(call).rejects.toThrow(/files|locally/);
+    expect(calls).toEqual([]);
+  });
+
+  it("names scripting.executeScript details.func, the case foxpaw hit", async () => {
+    const scripting = framePlan({ permissions: ["scripting"] });
+    const { browser } = setup({ framePlanned: scripting });
+    await expect(browser.scripting.executeScript({ target: { tabId: 7 }, func: () => document.title, args: [] })).rejects.toThrow(
+      /browser\.scripting\.executeScript: args\[0\]\.func is a function.*files/s,
+    );
+  });
+
+  it("throws in addListener when an extra listener argument cannot cross", () => {
+    const { browser } = setup();
+    expect(() => browser.tabs.onUpdated.addListener(() => {}, { match: () => true })).toThrow(/browser\.tabs\.onUpdated\.addListener: extra\[0\]\.match is a function/);
+  });
+
+  it("rejects a result the relay cannot send back, and names the API", async () => {
+    await expect(setup().browser.tabs.get(99)).rejects.toThrow(/browser\.tabs\.get: the result cannot cross the frame relay/);
+  });
+});
+
+describe("F9 storage.session in a framed page", () => {
+  it("fills storage.session with relayed calls, its event and QUOTA_BYTES when the manifest grants storage", async () => {
+    const { browser, calls } = setup();
+    expect(browser.storage.local).toEqual({});
+    expect(browser.storage.session.QUOTA_BYTES).toBe(10485760);
+    const seen: unknown[] = [];
+    browser.storage.session.onChanged.addListener((changes: unknown) => seen.push(changes));
+    await new Promise((done) => setTimeout(done, 10));
+    await browser.storage.session.set({ tab: 4 });
+    await expect(browser.storage.session.get("tab")).resolves.toEqual({ tab: 4 });
+    await new Promise((done) => setTimeout(done, 10));
+    expect(seen).toEqual([{ tab: { newValue: 4 } }]);
+    expect(calls).toEqual([["storage.session.get", "tab"]]);
+  });
+
+  it("leaves a frame that has storage.session alone, and adds nothing without the storage permission", () => {
+    expect(setup({ session: true }).browser.storage.session).toEqual({ real: true });
+    const bare = framePlan({ permissions: ["tabs"] });
+    expect(bare.relayed).not.toContain("storage.session");
+    expect(setup({ framePlanned: bare }).browser.storage.session).toBeUndefined();
   });
 });
 
