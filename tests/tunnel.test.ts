@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { closeTunnels, serve, tunnel } from "../src/e2e.js";
 
-const probe = vi.hoisted(() => ({ code: 200, urls: [] as string[] }));
+const probe = vi.hoisted(() => ({ code: 200, urls: [] as string[], answered: () => {} }));
 vi.mock("node:dns/promises", async (original) => ({
   ...(await original<object>()),
   resolveNs: async () => ["ns.test"],
@@ -26,7 +26,14 @@ vi.mock("node:https", async (original) => ({
   ...(await original<object>()),
   request: (url: string, _options: object, callback: (res: object) => void) => {
     probe.urls.push(url);
-    const req = Object.assign(new EventEmitter(), { end: () => queueMicrotask(() => callback({ statusCode: probe.code, resume() {} })), destroy() {} });
+    const req = Object.assign(new EventEmitter(), {
+      end: () =>
+        queueMicrotask(() => {
+          probe.answered();
+          callback({ statusCode: probe.code, resume() {} });
+        }),
+      destroy() {},
+    });
     return req;
   },
 }));
@@ -37,13 +44,27 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "foxkit-tunnel-test-"));
   probe.code = 200;
   probe.urls = [];
+  probe.answered = () => {};
   delete process.env.FOXKIT_BROWSER;
   delete process.env.CLOUDFLARED;
 });
 afterEach(async () => {
+  vi.useRealTimers();
   await closeTunnels();
   process.env = { ...saved };
 });
+
+/**
+ * Ends each try when Cloudflare has answered the probe, not after a fixed
+ * time. The clock stands still until the answer, then jumps past the try's
+ * deadline. A slow spawn under load cannot end a try before cloudflared ran.
+ */
+const TRY_MS = 60_000;
+function endEachTryOnAnswer() {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  probe.answered = () => vi.setSystemTime(Date.now() + TRY_MS + 1);
+  return { timeoutMs: TRY_MS };
+}
 
 /** A fake cloudflared that logs its PID and arguments, then runs body. */
 function fake(body: string) {
@@ -110,14 +131,16 @@ describe("starting the shared tunnel", () => {
   it("T2 T3 gives up on a URL that only answers 530, and stops every cloudflared", async () => {
     probe.code = 530;
     const cloudflared = fake(OPENS);
-    await expect(tunnel(8080, { cloudflared, timeoutMs: 800 })).rejects.toThrow("3 tries");
+    await expect(tunnel(8080, { cloudflared, ...endEachTryOnAnswer() })).rejects.toThrow("3 tries");
     expect(pids()).toHaveLength(3);
     expect(pids().filter(alive)).toEqual([]);
   }, 20_000);
 
   it.each([404, 520, 522, 524])("T2 a %d through Cloudflare is not the gateway's 200, so the tunnel is not ready", async (code) => {
     probe.code = code;
-    await expect(tunnel(8080, { cloudflared: fake(OPENS), timeoutMs: 800 })).rejects.toThrow("3 tries");
+    const cloudflared = fake(OPENS);
+    await expect(tunnel(8080, { cloudflared, ...endEachTryOnAnswer() })).rejects.toThrow("3 tries");
+    expect(pids()).toHaveLength(3);
   }, 20_000);
 
   it("T2 the probe asks the gateway's ready path, and the gateway answers it 200", async () => {
