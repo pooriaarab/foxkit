@@ -1,138 +1,110 @@
 # foxkit
 
-The template for fox repos: shared CI, Firefox E2E tests, and npm release.
+[![npm version](https://img.shields.io/npm/v/create-foxkit)](https://www.npmjs.com/package/create-foxkit)
+[![Downloads per month](https://img.shields.io/npm/dm/create-foxkit)](https://www.npmjs.com/package/create-foxkit)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://opensource.org/license/mit)
 
-foxkit has two parts. The `create-foxkit` command makes a new TypeScript repo
-that is ready for CI and npm release. The `create-foxkit/e2e` library starts a
-real Firefox with your extension installed, so a test can check what the
-extension does.
+[Package](https://www.npmjs.com/package/create-foxkit) · [Setup](#create-your-first-repo) · [API](#api) · [Issues](https://github.com/pooriaarab/foxkit/issues)
+
+foxkit is an open-source TypeScript project generator and Firefox extension test harness for package maintainers.
+The `create-foxkit` command creates repositories with GitHub Actions, pnpm checks, and npm release workflows.
+Its library drives Firefox through Puppeteer and includes local and Ichabod browser modes.
 
 ## Install
 
 ```bash
-npm i -D create-foxkit
+npm install --save-dev create-foxkit
 ```
 
-You need this only for the E2E library. To make a repo, use `npm create`, as
-the next section shows.
+Use Node.js 24 or later. The package has one direct runtime dependency, `puppeteer-core`.
+Scaffolding also needs Git; generated repositories use pnpm 11.10.0.
 
-## Example
+## Create your first repo
 
-Make a repo with a test extension, then run its checks and its Firefox test:
+Run this command in a directory without an existing `foxdemo` project:
 
 ```bash
-npm create foxkit@latest foxdemo -- --prefix fdm --description "Say what foxdemo does in one sentence." --extension
+npm create foxkit@latest foxdemo -- --prefix fdm --description "A Firefox extension." --extension
 cd foxdemo
 pnpm install
 pnpm ci:local
 pnpm e2e
 ```
 
-`pnpm e2e` builds `dist-e2e/` and runs `e2e/run.mjs`. This is the core of it.
-It runs as written in a repo made with `--extension`, after
-`node scripts/build-ext.mjs --e2e`:
-
-```js
-import { launch, poll, serve, writeArtifact } from "create-foxkit/e2e";
-
-const site = await serve("e2e/site");
-const fox = await launch({ extension: "dist-e2e" });
-try {
-  const page = await fox.open(`${site.url}/index.html`);
-  const value = await poll(page, () => document.documentElement.dataset.fixture);
-  console.log(writeArtifact("artifacts", "e2e", { value }));
-} finally {
-  await fox.close();
-  await site.close();
-}
-```
-
-## What a new repo gets
-
-| Path | What it does |
-|---|---|
-| `package.json` | pnpm, ESM, Node 24 or later. Scripts: `build`, `typecheck`, `lint`, `test`, `ci:local`. |
-| `tsconfig.json`, `.oxlintrc.json`, `vitest.config.ts` | TypeScript, oxlint and vitest. `pnpm ci:local` runs lint, typecheck, test and build. |
-| `src/index.ts` | A one-line library. Replace it with your code. |
-| `README.md` | The ten sections every fox repo has. Each part to write starts with `FILL:`. |
-| `AGENTS.md` | The PR rules for your prefix, the layout and the commands. |
-| `docs/failure-modes.md` | Where you list how the code can fail, before you write it. |
-| `.github/workflows/ci.yml` | Runs `pnpm ci:local` on each pull request and each push to `main`. |
-| `.github/workflows/release.yml` | On a push to `release`: refuses a version that has a tag, runs `pnpm ci:local`, publishes to npm with provenance, then tags `v<version>` and creates a GitHub release. |
-| `.github/workflows/pr-standards.yml` | Checks the branch, title, body and size of each pull request. |
-| `.github/ISSUE_TEMPLATE/`, `.agents/issues.md` | Bug, feature, chore and epic forms, and the issue rules. |
-| `LICENSE` | MIT. |
-
-With `--extension`, the repo also gets these:
-
-| Path | What it does |
-|---|---|
-| `extension/` | A Manifest V3 extension for Firefox with an `action` popup that the repo fills in to show its primitive. Its name and titles are the repo name, and it has 48, 96 and 128 px icons. The gecko ID is `<name>@<owner>`, `strict_min_version` is `153.0`, and it declares `data_collection_permissions`. Its background script stores a value. It has no content script. |
-| `scripts/build-ext.mjs` | Bundles `extension/` into `dist-ext/` with esbuild: the release build that AMO gets. With `--e2e` it writes `dist-e2e/` instead, which adds the E2E content script from `e2e/extension/`. It stops when the manifest version is not the `package.json` version. |
-| `build:ext`, `lint:ext` scripts | `pnpm ci:local` also builds `dist-ext/` and runs `web-ext lint --warnings-as-errors` on it. |
-| `extension/amo-metadata.json`, `scripts/amo-listing.mjs`, `check:amo` script | The AMO listing: name, summary, description, category, MIT license, links and notes for reviewers. `pnpm ci:local` runs `check:amo`, which stops on a listing that AMO refuses, on "demo", "test" or "fixture" in text that users see, on a manifest that declares data collection without a `privacy_policy`, and on a test-only piece in `dist-ext/`: a content script or host permission for `127.0.0.1`, `localhost` or `*.localhost` (unless `local_hosts` in the listing gives a reason), or a file named `e2e`, `fixture`, `test` or `spec`. Edit the description before the first release. |
-| `e2e/run.mjs`, `e2e/site/`, `e2e/extension/` | The E2E test. It installs `dist-e2e/`, checks that the E2E content script marks a page on `127.0.0.1` and that the background stored a value, and writes `artifacts/e2e-<date>.json`. |
-| `e2e` script, `create-foxkit` dev dependency | `pnpm e2e` builds `dist-e2e/` and runs the test. |
-| AMO steps in `release.yml` | After the npm publish, `web-ext sign --channel=listed --amo-metadata` submits `dist-ext/` and the listing with the `AMO_JWT_ISSUER` and `AMO_JWT_SECRET` secrets, and uploads the `git archive` source for AMO review. A listed version waits for review, so web-ext runs with `--approval-timeout=0` and returns after the upload. Before the upload, `amo-listing.mjs version-status` asks AMO for the version: when AMO already has it as listed, a re-run skips `web-ext sign` and finishes the release. `amo-listing.mjs after-submit` then sends the privacy policy (when there is one) and the listing icon. The GitHub release says "Submitted for AMO review" and links to the listing; it has no `.xpi`. An empty secret stops the job with a clear error. |
-| `pnpm-workspace.yaml` | Allows the esbuild build script, which pnpm 11 blocks by default. |
-| An `e2e` job in `ci.yml` | Installs Firefox with `browser-actions/setup-firefox` and runs `pnpm e2e`. |
-
-All GitHub Actions are pinned to commit SHAs.
-
-## Use cases
-
-| Who | What they build | How foxkit helps |
-|---|---|---|
-| A developer who starts a Firefox extension | An MV3 extension with tests from day one | `--extension` gives an extension with an AMO listing, a Firefox E2E test that also runs in CI, and an AMO submission on release. |
-| The fox primitives maintainers | foxmind, foxpaw, foxgate and the other fox repos | Each repo starts with the same CI, release workflow and PR rules. |
-| An author of a small library for AI agents | A TypeScript package on npm | The release workflow publishes with provenance and refuses to publish a version twice. |
-| A team with an extension that has no browser tests | Firefox E2E tests in their own repo | `npm i -D create-foxkit`, then use `launch()` and `poll()` from `create-foxkit/e2e`. |
-| A fleet of coding agents | New repos, made with no person at the keyboard | The command has no prompts. It refuses bad input and writes nothing in that case. |
-| A benchmark author | A task suite that scores browser agents in Firefox | `serve()` hosts local task pages. `writeArtifact()` keeps each result as JSON. |
+The generator prints `Created foxdemo` and initializes a `main` branch.
+The browser test writes `artifacts/e2e-<date>.json` after its assertions pass.
+Install Firefox first; set `FIREFOX` to its binary path when automatic lookup fails.
+Local mode needs no credentials. Environment variables come from your shell; the library does not load `.env` files.
+The generated extension is a starting example. Replace its behavior and AMO listing before release.
 
 ## How it works
 
-```mermaid
-flowchart LR
-  cli["npm create foxkit"] --> repo["New repo<br/>git init -b main"]
-  repo -->|pull request| ci["CI<br/>pnpm ci:local + Firefox E2E"]
-  ci -->|merge| main["main<br/>staging"]
-  main -->|merge| rel["release branch<br/>release.yml"]
-  rel --> npm["npm publish --provenance"]
-  rel --> tag["tag vX.Y.Z<br/>GitHub release"]
+```text
+CLI arguments -> validated template -> new Git repository
+Test -> create-foxkit/e2e -> Puppeteer -> local Firefox or Ichabod
+Remote pages -> shared Cloudflare quick tunnel -> Ichabod Firefox
 ```
 
-The command reads `template/base` (and `template/extension` with
-`--extension`) into memory and fills the placeholders. It writes the files
-only when all input is valid, then runs `git init -b main`.
+Input validation and template rendering finish before the generator writes files.
+Local tests use temporary Firefox profiles and temporary add-ons.
+Remote mode changes the installed extension copy to support framed extension pages.
 
-The E2E library drives Firefox through Puppeteer over WebDriver BiDi:
+## Why it exists
 
-```mermaid
-sequenceDiagram
-  participant T as Your test
-  participant H as create-foxkit/e2e
-  participant F as Firefox
-  T->>H: launch({ extension })
-  H->>F: start with a new profile and -remote-allow-system-access
-  H->>F: webExtension.install (temporary add-on)
-  T->>H: open(url)
-  H->>F: new tab, load url
-  T->>H: poll(page, fn)
-  H->>F: run fn in the page until it returns a value
-  T->>H: openExtensionPage("popup.html")
-  H->>F: load moz-extension://uuid/popup.html, poll until loaded
-  T->>H: close()
-  H->>F: stop Firefox, delete the profile
-```
+foxkit puts a fixed TypeScript package workflow and Firefox extension tests in one template.
+[Yeoman](https://yeoman.io/) provides a generator ecosystem when you need a different project structure.
+foxkit supplies one opinionated template with an optional extension overlay.
 
-Two Firefox facts shape the library. WebDriver BiDi refuses `moz-extension:`
-pages unless Firefox starts with `-remote-allow-system-access`. BiDi also sends
-no navigation events for those pages, so `goto()` never resolves there. For
-this reason `openExtensionPage()` polls `location.href` and
-`document.readyState`.
+## Compare
 
-## CLI
+Checked 2026-10-14 against the source and [Yeoman documentation](https://yeoman.io/).
+
+| Property | foxkit | Yeoman |
+|---|---|---|
+| Scope | TypeScript package and optional Firefox extension | Generator ecosystem |
+| Configuration | CLI flags and bundled template | Selected generator |
+| Execution | Local Node.js CLI | Local `yo` CLI |
+| Browser harness | Included Firefox library | Depends on generator |
+| License | MIT | BSD-2-Clause for `yo` |
+
+## Coverage
+
+| Integration | Status | Source behavior |
+|---|---|---|
+| Mozilla Firefox | Implemented | Temporary extension installation through WebDriver BiDi |
+| Puppeteer | Implemented | Browser connection, pages, and evaluation |
+| Mozilla Ichabod | Implemented | Remote Firefox sessions with project credentials |
+| Cloudflare quick tunnels | Implemented | Shared public HTTP tunnel through `cloudflared` |
+| GitHub Actions | Template | CI, PR checks, and release workflows |
+| npm | Template | Publish workflow with provenance |
+| Mozilla Add-ons (AMO) | Template; live submission unverified | Extension listing checks and release submission steps |
+
+The table has seven integration entries. These statuses describe code paths, not live service certification.
+No credentialed Ichabod or AMO run is claimed by this README rewrite.
+The mascot exports six states: `idle`, `thinking`, `working`, `success`, `error`, and `needs-approval`.
+
+## Common use cases
+
+1. Firefox extension authors: generate a Manifest V3 starter with pnpm checks and GitHub Actions.
+2. TypeScript maintainers: create an npm library with a release branch workflow.
+3. Existing Firefox projects: add Puppeteer tests with `create-foxkit/e2e`.
+4. Browser test authors: serve fixture pages and write JSON artifacts on Node.js.
+5. Ichabod users: run extension checks remotely through a shared Cloudflare tunnel.
+
+## Features
+
+- **Generator:** validates names, prefixes, descriptions, package names, and target directories before writing.
+- **Extension overlay:** includes esbuild, web-ext checks, an AMO listing, and browser tests.
+- **Browser harness:** exposes launch, navigation, polling, fixture serving, and artifact helpers.
+- **Remote mode:** uses Ichabod credentials and a shared Cloudflare quick tunnel.
+- **Mascot:** provides an SVG, CSS, and six typed state names.
+
+## Runtime surfaces
+
+The CLI runs on Node.js 24 or later. The test library controls Firefox only.
+foxkit has no Model Context Protocol (MCP) server or MCP tools.
+
+### CLI
 
 ```text
 create-foxkit <name> --prefix <p> --description "<one sentence>" [options]
@@ -156,7 +128,7 @@ Template files use these placeholders: `__NAME__`, `__PACKAGE__`,
 `__PREFIX__`, `__PREFIX_UPPER__`, `__DESCRIPTION__` and `__OWNER__`. In
 `.json` files, the command escapes the values for JSON.
 
-## API
+### API
 
 The E2E exports come from `create-foxkit/e2e`. The fox mascot is in
 `create-foxkit/fox`; see "The fox mascot".
@@ -194,7 +166,7 @@ A `Fox` has these members:
 | `openExtensionPage(path, timeoutMs = 30000)` | Opens an extension page in a new tab and polls until it is loaded. In remote mode the page is in a frame: see "Extension pages on Ichabod". |
 | `close()` | Stops Firefox and deletes the profile. A second call does nothing. |
 
-### Remote mode (Ichabod)
+#### Remote mode (Ichabod)
 
 Set `FOXKIT_BROWSER=ichabod` and `ICHABOD_API_KEY` to run a test on a Firefox
 on Ichabod, Mozilla's cloud browser service, instead of this computer. The
@@ -225,7 +197,7 @@ has limits:
 - A page that the extension opens in a tab itself (`tabs.create`) is not
   reachable. Open it with `openExtensionPage()` instead.
 
-#### Extension pages on Ichabod
+##### Extension pages on Ichabod
 
 BiDi cannot script or capture a `moz-extension:` page in a tab there, but it
 can when the page is in an iframe on an https page. So `openExtensionPage()`
@@ -301,7 +273,7 @@ A function that you give to `poll()` or `page.evaluate()` runs in the page,
 not in Node. It cannot use variables from outside it. Pass values through
 `arg`.
 
-### The fox mascot
+#### The fox mascot
 
 One animated fox for every fox* extension. It is an inline SVG that CSS moves;
 no script runs. The SVG and the CSS together are under 3 KB.
@@ -346,82 +318,88 @@ then takes the full width of the block around it.
 
 foxkit has a CLI (`create-foxkit`) and a library. It has no MCP server.
 
-## Firefox APIs used
+## Delivery and behavior limits
 
-| API | MDN | Why |
-|---|---|---|
-| WebDriver BiDi `webExtension.install` | [webExtension](https://developer.mozilla.org/en-US/docs/Web/WebDriver/Reference/BiDi/Modules/webExtension) | `launch()` installs the extension as a temporary add-on. |
-| WebDriver BiDi `script` module | [script](https://developer.mozilla.org/en-US/docs/Web/WebDriver/Reference/BiDi/Modules/script) | `poll()` and `page.evaluate()` run functions in a page. |
-| `-remote-allow-system-access` command-line flag | No MDN page | Lets BiDi reach `moz-extension:` pages. Ichabod does not set it. |
-| `web_accessible_resources` with `matches` | [web_accessible_resources](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/web_accessible_resources) | Remote mode lets pages on the tunnel origin, and no other, frame the extension pages. |
-| `runtime.connect` and `runtime.onConnect` | [runtime.connect](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/connect) | The frame relay sends calls and events between a framed page and the background page. |
-| WebDriver BiDi `browsingContext.getTree` and `browsingContext.close` | [browsingContext](https://developer.mozilla.org/en-US/docs/Web/WebDriver/Reference/BiDi/Modules/browsingContext) | Remote mode reads the extension UUID from a tab URL, then closes the tab. |
-| `extensions.webextensions.uuids` preference | No MDN page | Fixes the extension UUID, so the `moz-extension:` URL is known before the add-on loads. |
-| `browser_specific_settings` (`gecko.id`, `data_collection_permissions`) | [browser_specific_settings](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/browser_specific_settings) | The demo extension needs an ID and Firefox 153 (the current ESR). AMO requires the data collection key for new extensions. |
-| `background.scripts` | [background](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/background) | The demo extension's background script (an event page). |
-| `content_scripts` | [content_scripts](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/content_scripts) | The demo extension marks each page on `127.0.0.1`. |
-| `runtime.onInstalled` | [runtime.onInstalled](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/onInstalled) | The demo extension stores its value at install time. |
-| `action` popup | [action](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/action) | The page where a repo shows its primitive. The E2E test reads it. |
-| `storage.local` | [storage.local](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/storage/local) | The demo extension stores a value and `popup.html` reads it. |
+- The template fixes pnpm, TypeScript, Node.js, and GitHub Actions. There is no template update command.
+- Generated source is a scaffold, not your finished package or extension.
+- Change the generated author, license attribution, extension behavior, and listing before release.
+- Remote mode requires Manifest V3, `ICHABOD_API_KEY`, and `cloudflared`.
+- Remote mode refuses custom Firefox paths, preferences, and visible browser windows.
+- Remote navigation has a 60-second limit and one retry for timeout or network errors.
+- Remote connection attempts stop after three tries; each defaults to 45 seconds.
+- The frame relay supports `browser.*`; unsupported namespaces and user-gesture calls can fail.
+- Remote mounts share one public origin. WebSocket upgrades are not forwarded.
+- Mounted servers remain public until closed. Protect private fixture data yourself.
+- Artifact names use UTC dates. Another same-day write with the same name replaces the file.
+- AMO submission needs credentials and review. It does not guarantee a signed extension.
+- npm release needs `NPM_TOKEN`; AMO submission needs `AMO_JWT_ISSUER` and `AMO_JWT_SECRET`.
 
-## Limits
+## Integration guides
 
-- `create-foxkit` is not on npm until its first release. Until then, run the
-  command from a checkout: `pnpm install && pnpm build`, then
-  `node dist/cli.js <name> ...`.
-- The template is fixed: pnpm, TypeScript, Node 24 or later, and GitHub
-  Actions. There are no options for other tools.
-- A repo does not get later template changes. There is no update command.
-- `LICENSE` and the `author` field in `package.json` name Pooria Arab. Change
-  both when the repo is yours.
-- The E2E library works with Firefox only. It is tested with Firefox 157 on
-  macOS.
-- The E2E library installs temporary add-ons only. The AMO submission
-  happens only in `release.yml`, and it has not run against AMO from this
-  template yet.
-- The release submits the extension after the npm publish. If the submission
-  fails, run the release again: it skips the npm publish when that version is
-  already on npm.
-- AMO reviews a listed version before it signs it. The release does not wait
-  for that review, so the signed file is on the AMO listing, not on the
-  GitHub release.
-- The release workflow needs the repository secret `NPM_TOKEN`. Without it,
-  the publish step fails with a clear error.
-- `writeArtifact()` names files by UTC date, so a second run on the same day
-  replaces the file.
+- [Firefox extension quickstart](#create-your-first-repo): scaffold, install, and run a browser test.
+- [Ichabod remote Firefox setup](#remote-mode-ichabod): credentials, tunnel setup, and frame restrictions.
+- [Fox mascot setup](#the-fox-mascot): inline SVG, CSS states, and accessibility.
 
-## Part of the fox primitives
+## Status
 
-foxkit depends on no fox repo. Every fox repo starts from it.
+Version 0.1.7 is an early release. APIs and template defaults can change before 1.0.
+Use [GitHub issues](https://github.com/pooriaarab/foxkit/issues) for support.
+Public case studies are not yet published in this repository.
 
-```mermaid
-flowchart LR
-  foxkit["foxkit"] --> foxbench & foxmind & foxpaw & foxgate & foxtrail & foxloop & foxlend & foxmate
-  foxkit --> later["v2 and v3 repos"]
-  click foxkit "https://github.com/pooriaarab/foxkit"
-  click foxbench "https://github.com/pooriaarab/foxbench"
-  click foxmind "https://github.com/pooriaarab/foxmind"
-  click foxpaw "https://github.com/pooriaarab/foxpaw"
-  click foxgate "https://github.com/pooriaarab/foxgate"
-  click foxtrail "https://github.com/pooriaarab/foxtrail"
-  click foxloop "https://github.com/pooriaarab/foxloop"
-  click foxlend "https://github.com/pooriaarab/foxlend"
-  click foxmate "https://github.com/pooriaarab/foxmate"
-```
+## FAQ
+
+### What is foxkit?
+
+foxkit creates TypeScript repositories and provides a Firefox extension test library.
+Use the CLI for new projects or install the library in an existing project.
+
+### Which integrations are verified?
+
+foxkit contains seven integration entries listed above, with implementation and template statuses.
+This rewrite verifies source paths and local checks, without a credentialed Ichabod or AMO run.
+
+### Does foxkit provide a managed browser service?
+
+foxkit provides a client for Ichabod and a local Firefox harness.
+You supply service credentials or install Firefox yourself.
+
+### How is foxkit different from Yeoman?
+
+foxkit ships a fixed package template and a Firefox test harness.
+Yeoman runs generators selected from its ecosystem.
+
+### Can foxkit test Chrome extensions?
+
+foxkit targets Firefox through WebDriver BiDi.
+It does not provide a Chrome test mode.
+
+### Does foxkit update generated repositories?
+
+foxkit copies the template once.
+Apply future workflow and source changes yourself.
+
+### Does foxkit load my .env file?
+
+foxkit reads process environment variables.
+Export them in your shell or load them before starting Node.js.
+
+### Can I use foxkit without Ichabod?
+
+foxkit defaults to local Firefox.
+Set `FIREFOX` only when its binary is outside the normal search paths.
 
 ## Development
 
 ```bash
-pnpm install
-pnpm ci:local   # lint, typecheck, test, build
-pnpm e2e        # scaffolds two repos and runs their checks and Firefox E2E
-pnpm e2e:ichabod  # remote mode against Ichabod; needs ICHABOD_API_KEY and cloudflared
+pnpm install --frozen-lockfile
+pnpm ci:local
+pnpm e2e
+pnpm e2e:ichabod
 ```
 
-`pnpm e2e` writes `artifacts/e2e-<date>.json`, and `pnpm e2e:ichabod` writes
-`artifacts/e2e-ichabod-<date>.json`. Set `FIREFOX` when Firefox is
-not in the usual place.
+The local gate runs lint, typecheck, unit tests, and build.
+Browser tests run separately; Ichabod tests require credentials and `cloudflared`.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://opensource.org/license/mit)
