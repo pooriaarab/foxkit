@@ -1,6 +1,6 @@
 {
   "name": "create-foxkit",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "TypeScript project generator and Firefox extension test harness with Puppeteer, Ichabod, GitHub Actions, and npm release workflows.",
   "type": "module",
   "license": "MIT",
