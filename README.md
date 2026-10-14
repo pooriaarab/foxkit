@@ -330,6 +330,8 @@ the element, so the element sets the size.
 | `needs-approval` | Leans in, ears up, and looks down to the right, at the approval. |
 
 - The SVG has `aria-hidden="true"`. Put the status in text next to it.
+- `.fox-mascot` sets `stroke: none`, so a page rule that strokes its icons
+  (`svg { stroke: currentColor }`) does not outline the fox.
 - Only `transform` moves. The fox never changes its box, so nothing next to it
   shifts. The hop draws above the box.
 - With `prefers-reduced-motion: reduce`, nothing moves. Each state keeps a

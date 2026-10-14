@@ -1,4 +1,4 @@
-// Tests for the fox mascot: X1-X7 in docs/failure-modes.md. They read the
+// Tests for the fox mascot: X1-X8 in docs/failure-modes.md. They read the
 // files that ship (fox/fox.svg, fox/fox.css). Screenshots of each state, in
 // light, dark and reduced motion, show what the tests cannot.
 import { readFileSync } from "node:fs";
@@ -70,6 +70,10 @@ describe("fox mascot", () => {
     expect(tag).toMatch(/aria-hidden="true"/);
     expect(tag).toMatch(/focusable="false"/);
     expect(svg).not.toMatch(/<(script|image|foreignObject|title)\b/);
+  });
+
+  it("X8 draws no outline when the page strokes its icons", () => {
+    expect(plain.find((r) => r.selector === ".fox-mascot")?.body).toMatch(/(^|;)stroke:none(;|$)/);
   });
 
   it("X7 keeps the fur and the eyes at 3:1 or more in both themes", () => {

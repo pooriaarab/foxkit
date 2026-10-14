@@ -142,3 +142,4 @@ moves it; no script runs. The page puts the SVG in an element and sets
 | X5 | A state in `FOX_STATES` has no style, so the fox looks idle while a task runs or waits. | Every state other than `idle` has its own rule. | `tests/fox.test.ts` |
 | X6 | A screen reader reads the drawing, or the fox takes keyboard focus. | The SVG has `aria-hidden="true"` and `focusable="false"`. The README says to put the status in text next to it. | `tests/fox.test.ts` |
 | X7 | The fox fades into the page in the light or the dark theme. | The fur is at least 3:1 against the page color of the fox look in both themes, and the eyes at least 3:1 against the face. | `tests/fox.test.ts` |
+| X8 | The page styles its icons with a rule like `svg { stroke: currentColor }`, and the fox gets an outline. | `.fox-mascot` sets `stroke: none`; only the happy eyes set their own stroke. | `tests/fox.test.ts`; foxmate screenshots |
