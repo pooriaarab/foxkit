@@ -1,4 +1,4 @@
-// Tests for the fox mascot: X1-X8 in docs/failure-modes.md. They read the
+// Tests for the fox mascot: X1-X9 in docs/failure-modes.md. They read the
 // files that ship (fox/fox.svg, fox/fox.css). Screenshots of each state, in
 // light, dark and reduced motion, show what the tests cannot.
 import { readFileSync } from "node:fs";
@@ -44,7 +44,11 @@ describe("fox mascot", () => {
         }
       }
     }
-    expect(css).not.toMatch(/transition(-property)?\s*:(?![^;]*\b(transform|opacity)\b)/);
+    for (const r of plain) {
+      for (const [, prop, value] of r.body.matchAll(/(?:^|;)\s*(transition(?:-property)?)\s*:([^;]*)/g)) {
+        for (const part of value!.split(",")) expect(part.trim().split(/\s+/)[0], `${r.selector} ${prop}`).toMatch(/^(transform|opacity)$/);
+      }
+    }
     expect(css).toMatch(/overflow\s*:\s*visible/);
   });
 
@@ -73,7 +77,19 @@ describe("fox mascot", () => {
   });
 
   it("X8 draws no outline when the page strokes its icons", () => {
-    expect(plain.find((r) => r.selector === ".fox-mascot")?.body).toMatch(/(^|;)stroke:none(;|$)/);
+    expect(plain.find((r) => r.selector === ".fox-mascot *")?.body).toMatch(/(^|;)stroke:none(;|$)/);
+    expect(plain.find((r) => r.selector === ".fx-joy")?.body).toMatch(/(^|;)fill:none(;|$)/);
+  });
+
+  it("X9 scopes each state to the fox's own parent, with prefixed variables", () => {
+    const stateRules = plain.filter((r) => r.selector.includes("[data-state"));
+    expect(stateRules.length).toBeGreaterThan(0);
+    for (const r of stateRules) {
+      for (const sel of r.selector.split(",")) expect(sel.trim(), r.selector).toMatch(/^\[data-state="?[\w-]+"?\]>\.fox-mascot$/);
+    }
+    for (const r of [...plain, ...media.found.flatMap((m) => rules(m.body))]) {
+      for (const [, name] of r.body.matchAll(/(?:^|;)\s*(--[\w-]+)\s*:/g)) expect(name, r.selector).toMatch(/^--(fx|fox)-/);
+    }
   });
 
   it("X7 keeps the fur and the eyes at 3:1 or more in both themes", () => {

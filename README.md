@@ -312,11 +312,14 @@ no script runs. The SVG and the CSS together are under 3 KB.
 | `create-foxkit/fox.css` | The colors, the poses and the motion. |
 | `FOX_STATES` and `FoxState` from `create-foxkit/fox` | The states the CSS draws. |
 
-Put the SVG in an element, and set `data-state` on that element. The SVG fills
-the element, so the element sets the size.
+Put the SVG in an element, and set `data-state` on that element. Only the SVG's
+own parent sets its state, so a `data-state` further up does not reach it. The
+SVG fills the element, so the element sets the size. Make the element a block
+or an inline-block: an inline `<span>` ignores `width` and `height`, and the fox
+then takes the full width of the block around it.
 
 ```html
-<span class="mascot" data-state="working" style="width: 96px; height: 96px"><!-- fox.svg --></span>
+<span class="mascot" data-state="working" style="display: inline-block; width: 96px; height: 96px"><!-- fox.svg --></span>
 <span role="status">Working on example.com</span>
 ```
 
@@ -326,18 +329,19 @@ the element, so the element sets the size.
 | `thinking` | Looks up and tilts its head, with slow nods. |
 | `working` | Reads: looks down and from side to side, with quick nods. |
 | `success` | Happy eyes and one hop. Set it back to `idle` after a few seconds. |
-| `error` | Ears out, head and tail down, one small shake. |
-| `needs-approval` | Leans in, ears up, and looks down to the right, at the approval. |
+| `error` | Ears out, head down, tail low, one small shake. |
+| `needs-approval` | Tilts its head, ears up, and looks down to the right, at the approval. |
 
 - The SVG has `aria-hidden="true"`. Put the status in text next to it.
-- `.fox-mascot` sets `stroke: none`, so a page rule that strokes its icons
-  (`svg { stroke: currentColor }`) does not outline the fox.
+- Every part of the fox sets `stroke: none`, so a page rule that strokes its
+  icons (`svg { stroke: currentColor }`) does not outline the fox.
 - Only `transform` moves. The fox never changes its box, so nothing next to it
   shifts. The hop draws above the box.
 - With `prefers-reduced-motion: reduce`, nothing moves. Each state keeps a
   still pose, so the state still shows.
 - The colors follow `prefers-color-scheme`. Set `--fox-fur`, `--fox-cream` and
-  `--fox-ink` on `.fox-mascot` to change them. The fur keeps 3:1 against the
+  `--fox-ink` on `.fox-mascot` to change them, for example for a theme set by
+  a class instead of the OS. The fur keeps 3:1 against the
   fox look's page colors in both themes.
 
 foxkit has a CLI (`create-foxkit`) and a library. It has no MCP server.
