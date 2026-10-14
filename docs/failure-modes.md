@@ -126,3 +126,21 @@ must not make a test pass that fails for a user.
 | F7 | A relayed call that depends on the caller's tab answers for the background page: `tabs.getCurrent()` gives `undefined`, `currentWindow: true` means the last focused window, and the host tab shows the host URL, so the page sees its own tab as a web page. | The relay answers `tabs.getCurrent()` with the sender's tab, `windows.getCurrent()` with the sender's window, and turns `currentWindow: true` into the sender's window. In each relayed result and event, a frame host tab has the URL of the page framed in it. The background page's own calls still see the host URL; the README says so. | `tests/frame.test.ts`; `scripts/e2e-ichabod.mjs` |
 | F8 | A relayed call gets an argument that cannot be cloned, most often `scripting.executeScript({ func })`. The port throws `DataCloneError: Function object could not be cloned.`, which names neither the API nor the argument. The background page cannot rebuild a function: MV3 CSP blocks `Function()` and `eval` there, and Firefox reads a function's own source, so a `toString` override runs nothing. | The call rejects before it posts, with an error that names `browser.<ns>.<member>`, the argument path (`args[0].func`) and what to do instead (`files`, or run the check locally). The same holds for the extra arguments of an `on*` listener. A result the relay cannot send back rejects and names the API. | `tests/frame.test.ts`; `scripts/e2e-ichabod.mjs` |
 | F9 | The page reads `browser.storage.session`, which a real extension page has and a framed page lacks, so it gets `undefined`. | When `permissions` lists `storage` and the frame lacks `storage.session`, the shim fills it with relayed calls and its `onChanged` event, and `QUOTA_BYTES`. A frame that has it does not change. | `tests/frame.test.ts`; `scripts/e2e-ichabod.mjs` |
+
+## The fox mascot (`create-foxkit/fox`)
+
+One drawing for every fox* extension: `fox/fox.svg` and `fox/fox.css`. CSS
+moves it; no script runs. The page puts the SVG in an element and sets
+`data-state` on that element.
+
+| # | Failure mode | Wanted behaviour | Test |
+|---|---|---|---|
+| X1 | The fox grows until it costs more than a small icon. | `fox.svg` and `fox.css` together are under 3 KB. | `tests/fox.test.ts` |
+| X2 | An animation or a transition moves a layout property (`width`, `height`, `margin`, `top`), so the text next to the fox shifts. | Keyframes and transitions change only `transform` and `opacity`. The SVG fills its box, and a hop draws outside it (`overflow: visible`). | `tests/fox.test.ts` |
+| X3 | The fox moves for a user who asks for reduced motion. | `prefers-reduced-motion: reduce` sets `animation: none` on every part. | `tests/fox.test.ts`; screenshots |
+| X4 | With reduced motion the state does not show, because the pose was in the animation. | Each state other than `idle` sets a pose variable that `translate`, `rotate` or `display` reads, outside any keyframes. Motion is a separate `transform` animation, so the pose holds with no animation. | `tests/fox.test.ts`; screenshots |
+| X5 | A state in `FOX_STATES` has no style, so the fox looks idle while a task runs or waits. | Every state other than `idle` has its own rule. | `tests/fox.test.ts` |
+| X6 | A screen reader reads the drawing, or the fox takes keyboard focus. | The SVG has `aria-hidden="true"` and `focusable="false"`. The README says to put the status in text next to it. | `tests/fox.test.ts` |
+| X7 | The fox fades into the page in the light or the dark theme. | The fur is at least 3:1 against the page color of the fox look in both themes, and the eyes at least 3:1 against the face. | `tests/fox.test.ts` |
+| X8 | The page styles its icons with a rule like `svg { stroke: currentColor }`, and the fox gets an outline. | Every part sets `stroke: none` (`.fox-mascot *`); only the happy eyes set their own stroke, with `fill: none`. | `tests/fox.test.ts`; foxmate screenshots |
+| X9 | An outer element's `data-state` leaks into a fox nested inside it, or the state rules put variables on unrelated page elements (any element can carry `data-state`). | Each state rule matches only `[data-state=X]>.fox-mascot`, the SVG's own parent. Every variable fox.css sets starts with `--fx-` or `--fox-`. | `tests/fox.test.ts` |

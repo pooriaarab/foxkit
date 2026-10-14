@@ -65,6 +65,8 @@ transcripts. Full rule: pooriaarab/agents-private `rules/fleet-claim.md`.
 src/cli.ts        the create-foxkit command (bin)
 src/scaffold.ts   copies template/ into a new repo and fills placeholders
 src/e2e.ts        the Firefox E2E harness, exported as create-foxkit/e2e
+src/fox.ts        the fox mascot states, exported as create-foxkit/fox
+fox/              the fox mascot drawing and CSS (fox.svg, fox.css)
 src/mode.ts       FOXKIT_BROWSER: the local Firefox or Ichabod
 src/ichabod.ts    remote mode: a Firefox on Ichabod instead of a local one
 src/tunnel.ts     the one shared Cloudflare quick tunnel for cloud browsers
