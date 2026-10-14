@@ -1,0 +1,26 @@
+.fox-mascot{display:block;width:100%;height:100%;overflow:visible;fill:var(--fox-fur);--fox-fur:oklch(.7 .17 48);--fox-cream:oklch(.96 .02 80);--fox-ink:oklch(.2 .02 40)}
+@media (prefers-color-scheme:light){.fox-mascot{--fox-fur:oklch(.62 .17 45);--fox-cream:oklch(.9 .045 72)}}
+.fox-mascot *{transform-box:fill-box;transform-origin:bottom}
+.fx-c{fill:var(--fox-cream)}.fx-k{fill:var(--fox-ink)}.fx-i{fill:oklch(.47 .12 38)}
+.fx-rig{translate:var(--rt);animation:var(--ra,fx-air 4s infinite)}
+.fx-tail{transform-origin:0 96%;rotate:var(--tr,-6deg);animation:var(--ta,fx-sway 3.4s infinite)}
+.fx-head{rotate:var(--hr);animation:var(--ha)}
+.fx-el{rotate:var(--el);animation:var(--la,fx-ear 5.2s 1s infinite)}
+.fx-er{rotate:var(--er)}
+.fx-eyes{translate:var(--et);animation:var(--ea)}
+.fx-open{display:var(--eo);transform-origin:50%;animation:fx-wink 4.6s infinite}
+.fx-joy{display:var(--eh,none);stroke:var(--fox-ink);stroke-width:2.6;stroke-linecap:round}
+[data-state=thinking]>*{--et:-2px -1.8px;--hr:6deg;--ha:fx-nod 2.4s infinite;--ea:fx-scan 3s infinite}
+[data-state=working]>*{--et:-2px 1.3px;--hr:4deg;--ha:fx-nod .8s infinite;--ea:fx-scan 1.6s infinite}
+[data-state=success]>*{--ra:fx-hop .6s;--eo:none;--eh:inline;--el:5deg;--er:-5deg}
+[data-state=error]>*{--ra:fx-no .45s;--hr:-4deg;--el:-18deg;--er:18deg;--la:none;--tr:-16deg;--ta:none;--et:0 2px}
+[data-state=needs-approval]>*{--rt:2px -1px;--hr:8deg;--ha:fx-nod 2.8s infinite;--et:2px 2px;--el:8deg;--er:-8deg}
+@keyframes fx-air{50%{transform:translateY(.8px)}}
+@keyframes fx-sway{50%{transform:rotate(12deg)}}
+@keyframes fx-ear{90%,96%{transform:none}93%{transform:rotate(-12deg)}}
+@keyframes fx-wink{96%{transform:none}98%{transform:scaleY(.1)}}
+@keyframes fx-nod{50%{transform:translateY(1px) rotate(-3deg)}}
+@keyframes fx-scan{50%{transform:translateX(4px)}}
+@keyframes fx-hop{40%{transform:translateY(-9px)}}
+@keyframes fx-no{25%{transform:translateX(-2px)}50%{transform:translateX(2px)}}
+@media (prefers-reduced-motion:reduce){.fox-mascot *{animation:none!important}}

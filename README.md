@@ -158,7 +158,8 @@ Template files use these placeholders: `__NAME__`, `__PACKAGE__`,
 
 ## API
 
-All exports come from `create-foxkit/e2e`.
+The E2E exports come from `create-foxkit/e2e`. The fox mascot is in
+`create-foxkit/fox`; see "The fox mascot".
 
 | Export | What it does |
 |---|---|
@@ -299,6 +300,43 @@ and the frame host each mount at `/_foxkit/<id>/`:
 A function that you give to `poll()` or `page.evaluate()` runs in the page,
 not in Node. It cannot use variables from outside it. Pass values through
 `arg`.
+
+### The fox mascot
+
+One animated fox for every fox* extension. It is an inline SVG that CSS moves;
+no script runs. The SVG and the CSS together are under 3 KB.
+
+| Export | What it is |
+|---|---|
+| `create-foxkit/fox.svg` | The drawing. Put it inline in the page, for example in a `<template>`. An `<img>` cannot animate it. |
+| `create-foxkit/fox.css` | The colors, the poses and the motion. |
+| `FOX_STATES` and `FoxState` from `create-foxkit/fox` | The states the CSS draws. |
+
+Put the SVG in an element, and set `data-state` on that element. The SVG fills
+the element, so the element sets the size.
+
+```html
+<span class="mascot" data-state="working" style="width: 96px; height: 96px"><!-- fox.svg --></span>
+<span role="status">Working on example.com</span>
+```
+
+| `data-state` | What the fox does |
+|---|---|
+| `idle` (or no attribute) | Breathes, sways its tail, blinks, and twitches one ear every few seconds. |
+| `thinking` | Looks up and tilts its head, with slow nods. |
+| `working` | Reads: looks down and from side to side, with quick nods. |
+| `success` | Happy eyes and one hop. Set it back to `idle` after a few seconds. |
+| `error` | Ears out, head and tail down, one small shake. |
+| `needs-approval` | Leans in, ears up, and looks down to the right, at the approval. |
+
+- The SVG has `aria-hidden="true"`. Put the status in text next to it.
+- Only `transform` moves. The fox never changes its box, so nothing next to it
+  shifts. The hop draws above the box.
+- With `prefers-reduced-motion: reduce`, nothing moves. Each state keeps a
+  still pose, so the state still shows.
+- The colors follow `prefers-color-scheme`. Set `--fox-fur`, `--fox-cream` and
+  `--fox-ink` on `.fox-mascot` to change them. The fur keeps 3:1 against the
+  fox look's page colors in both themes.
 
 foxkit has a CLI (`create-foxkit`) and a library. It has no MCP server.
 

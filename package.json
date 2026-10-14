@@ -22,10 +22,17 @@
       "types": "./dist/e2e.d.ts",
       "default": "./dist/e2e.js"
     },
+    "./fox": {
+      "types": "./dist/fox.d.ts",
+      "default": "./dist/fox.js"
+    },
+    "./fox.svg": "./fox/fox.svg",
+    "./fox.css": "./fox/fox.css",
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
+    "fox",
     "template"
   ],
   "scripts": {
