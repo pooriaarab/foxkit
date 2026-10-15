@@ -162,7 +162,7 @@ async function quickTunnel(port: number, options: TunnelOptions): Promise<{ url:
 
 // The gateway: mount id -> local port.
 /** The server mounted at the root of the tunnel (T7), if any. */
-let rootPort: number | undefined;
+let root: { port: number } | undefined;
 const routes = new Map<string, number>();
 let shared: Promise<{ origin: string; stop: () => Promise<void> }> | undefined;
 let nextId = 1;
@@ -189,7 +189,7 @@ function route(req: IncomingMessage): { id: string; port: number; path: string; 
   const port = from === undefined ? undefined : routes.get(from);
   if (from !== undefined && port !== undefined) return { id: from, port, path: url, byReferer: true };
   // T7: what no mount claims goes to the root mount, with its path as it is.
-  return rootPort === undefined ? undefined : { id: "", port: rootPort, path: url };
+  return root === undefined ? undefined : { id: "", port: root.port, path: url };
 }
 
 /** A Location header the browser can follow: /path gets the mount prefix, a local URL becomes public. */
@@ -264,16 +264,15 @@ export async function mount(port: number, id?: string, options: TunnelOptions = 
   browserMode();
   if (!Number.isInteger(port) || port <= 0 || port > 65_535) throw new Error(`tunnel() needs a TCP port, not ${JSON.stringify(port)}.`);
   if (options.root) {
-    if (rootPort !== undefined) throw new Error("A server is already mounted at the root of the tunnel. Close it first.");
+    if (root) throw new Error("A server is already mounted at the root of the tunnel. Close it first.");
     const { origin } = await startShared(options);
-    if (rootPort !== undefined) throw new Error("A server is already mounted at the root of the tunnel. Close it first.");
-    rootPort = port;
-    let mounted = true;
+    if (root) throw new Error("A server is already mounted at the root of the tunnel. Close it first.");
+    const mine = { port };
+    root = mine;
     return {
       url: origin,
       close: async () => {
-        if (mounted && rootPort === port) rootPort = undefined;
-        mounted = false;
+        if (root === mine) root = undefined;
       },
     };
   }
@@ -299,6 +298,6 @@ export async function closeTunnels(): Promise<void> {
   const running = shared;
   shared = undefined;
   routes.clear();
-  rootPort = undefined;
+  root = undefined;
   await (await running?.catch(() => undefined))?.stop();
 }
