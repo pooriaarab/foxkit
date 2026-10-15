@@ -214,3 +214,31 @@ describe("T5 the gateway routes by mount", () => {
     server.close();
   });
 });
+
+describe("T7 a root mount", () => {
+  it("serves one server at the tunnel origin with its own paths, after the mounts that claim a request, and unmounts", async () => {
+    process.env.CLOUDFLARED = fake(OPENS);
+    const site = await echo();
+    const other = await echo();
+    const mounted = await tunnel(other.port);
+    const root = await tunnel(site.port, { root: true });
+    expect(pids()).toHaveLength(1);
+    expect(root.url).toBe("https://fake-gateway.trycloudflare.com");
+    expect(await get("/towers-of-hanoi-hard?x=1", { "sec-fetch-mode": "navigate" })).toMatchObject({ status: 200, body: `127.0.0.1:${site.port} /towers-of-hanoi-hard?x=1` });
+    expect(await get("/user/")).toMatchObject({ status: 200, body: `127.0.0.1:${site.port} /user/` });
+    expect((await get("/go")).location).toBe("/login");
+    expect((await get("/away")).location).toBe(`${root.url}/x`);
+    // A prefix or a Referer under a mount still goes to that mount.
+    const path = new URL(mounted.url).pathname;
+    expect(await get(`${path}/a`)).toMatchObject({ body: `127.0.0.1:${other.port} /a` });
+    expect(await get("/app.js", { referer: `${mounted.url}/index.html` })).toMatchObject({ body: `127.0.0.1:${other.port} /app.js` });
+    await expect(tunnel(other.port, { root: true })).rejects.toThrow(/already mounted at the root/);
+    await root.close();
+    expect((await get("/user/")).status).toBe(404);
+    const again = await tunnel(other.port, { root: true });
+    expect(await get("/b")).toMatchObject({ body: `127.0.0.1:${other.port} /b` });
+    await again.close();
+    site.server.close();
+    other.server.close();
+  });
+});

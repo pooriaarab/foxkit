@@ -138,7 +138,7 @@ The E2E exports come from `create-foxkit/e2e`. The fox mascot is in
 | `launch(options)` | Starts Firefox with a new profile and installs the extension as a temporary add-on. Returns a `Fox`. |
 | `poll(page, fn, arg?, timeoutMs = 30000)` | Runs `fn(arg)` in the page until it returns a truthy value, and returns that value. Throws after the timeout. |
 | `serve(dir, { tunnel? })` | Serves a directory on `http://127.0.0.1:<free port>`. Returns `{ url, close }`. Paths outside the directory get 404. In remote mode, `url` is a public URL on the shared tunnel. |
-| `tunnel(port, { cloudflared?, timeoutMs?, signal? })` | Mounts `http://127.0.0.1:<port>` on the shared quick tunnel. Returns `{ url, close }`; `url` is `https://<random>.trycloudflare.com/_foxkit/<id>`. |
+| `tunnel(port, { cloudflared?, timeoutMs?, signal?, root? })` | Mounts `http://127.0.0.1:<port>` on the shared quick tunnel. Returns `{ url, close }`; `url` is `https://<random>.trycloudflare.com/_foxkit/<id>`. With `root: true`, the server sits at the root of the tunnel and `url` is the tunnel origin, so a single-page app sees its own paths; one root mount at a time, and the other mounts still win the requests they claim. |
 | `closeTunnels()` | Stops the shared tunnel now, instead of at process exit. |
 | `writeArtifact(dir, name, data)` | Writes `data` as JSON to `<dir>/<name>-<YYYY-MM-DD>.json` (UTC date) and returns the path. After a remote run, it adds the Ichabod sessions. It replaces `ICHABOD_API_KEY` with `***`. |
 | `findFirefox(path?)` | Returns the Firefox binary: `path`, then `FIREFOX`, then the usual install paths. Throws when there is none. |
@@ -258,6 +258,10 @@ and the frame host each mount at `/_foxkit/<id>/`:
   is a page navigation (a link or a form), the gateway answers `307` to the
   same path under the mount, so the next page keeps the prefix for its own
   links.
+- `tunnel(port, { root: true })` mounts one server at the root instead, for
+  a site that routes on its full path (a single-page app) or whose address
+  is typed with an absolute path. Requests that no other mount claims go to
+  it as they are.
 - All mounts share one origin. A check that needs two sites on different
   origins, or a host name such as `bank.localhost`, must run locally.
 - WebSocket upgrades are not forwarded.

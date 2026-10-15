@@ -1,5 +1,5 @@
 // tunnel(port): a public https URL for a server on 127.0.0.1, so a cloud
-// browser can reach it. docs/failure-modes.md T1-T5.
+// browser can reach it. docs/failure-modes.md T1-T7.
 //
 // A process opens ONE quick tunnel (T4): Cloudflare answers 429 after about
 // 15. It points at a local gateway, and tunnel() mounts at /_foxkit/<id>/.
@@ -7,7 +7,8 @@
 // prefix goes to the server its Referer names, and a redirect to /path gets
 // the prefix back, so pages that use absolute paths keep working (T5). A
 // navigation routed by its Referer is sent back under the mount (307), so
-// the next page keeps the prefix for its own links (T6).
+// the next page keeps the prefix for its own links (T6). One server may
+// mount at the root, for what no mount claims (T7).
 // All mounted servers share one origin. WebSocket upgrades are not forwarded.
 //
 // WARNING: anyone who has the URL reaches the mounted servers until close().
@@ -26,6 +27,8 @@ export interface TunnelOptions {
   timeoutMs?: number;
   /** Stops a start that is still running: cloudflared exits and tunnel() rejects. */
   signal?: AbortSignal;
+  /** Mount at the root of the tunnel, not under /_foxkit/<id>, so the server sees its own paths (T7). One at a time. */
+  root?: boolean;
 }
 
 export interface Tunnel {
@@ -158,6 +161,8 @@ async function quickTunnel(port: number, options: TunnelOptions): Promise<{ url:
 }
 
 // The gateway: mount id -> local port.
+/** The server mounted at the root of the tunnel (T7), if any. */
+let root: { port: number } | undefined;
 const routes = new Map<string, number>();
 let shared: Promise<{ origin: string; stop: () => Promise<void> }> | undefined;
 let nextId = 1;
@@ -178,16 +183,19 @@ function route(req: IncomingMessage): { id: string; port: number; path: string; 
   try {
     referer = new URL(req.headers.referer ?? "").pathname;
   } catch {
-    return undefined;
+    // No Referer, or not a URL: no mount claims the request.
   }
   const from = /^\/_foxkit\/([a-z0-9-]+)\//.exec(referer)?.[1];
   const port = from === undefined ? undefined : routes.get(from);
-  return from === undefined || port === undefined ? undefined : { id: from, port, path: url, byReferer: true };
+  if (from !== undefined && port !== undefined) return { id: from, port, path: url, byReferer: true };
+  // T7: what no mount claims goes to the root mount, with its path as it is.
+  return root === undefined ? undefined : { id: "", port: root.port, path: url };
 }
 
 /** A Location header the browser can follow: /path gets the mount prefix, a local URL becomes public. */
 function relocate(location: string, id: string, port: number, origin: string): string {
   const local = `http://127.0.0.1:${port}`;
+  if (!id) return location.startsWith(local) ? `${origin}${location.slice(local.length) || "/"}` : location;
   if (location.startsWith(local)) return `${origin}${PREFIX}${id}${location.slice(local.length) || "/"}`;
   if (location.startsWith("/") && !location.startsWith("//") && !location.startsWith(PREFIX)) return `${PREFIX}${id}${location}`;
   return location;
@@ -210,7 +218,7 @@ function forward(origin: () => string) {
       req.resume();
       return;
     }
-    const upstream = httpRequest({ host: "127.0.0.1", port: target.port, method: req.method, path: target.path, headers: { ...req.headers, host: `127.0.0.1:${target.port}`, "x-forwarded-prefix": `${PREFIX}${target.id}` } }, (answer) => {
+    const upstream = httpRequest({ host: "127.0.0.1", port: target.port, method: req.method, path: target.path, headers: { ...req.headers, host: `127.0.0.1:${target.port}`, ...(target.id ? { "x-forwarded-prefix": `${PREFIX}${target.id}` } : {}) } }, (answer) => {
       const headers = { ...answer.headers };
       if (typeof headers.location === "string") headers.location = relocate(headers.location, target.id, target.port, origin());
       res.writeHead(answer.statusCode ?? 502, headers);
@@ -251,10 +259,23 @@ function startShared(options: TunnelOptions): Promise<{ origin: string; stop: ()
   }));
 }
 
-/** Mount a local server on the shared tunnel under the given id, or the next number. */
+/** Mount a local server on the shared tunnel under the given id, or the next number, or at the root (T7). */
 export async function mount(port: number, id?: string, options: TunnelOptions = {}): Promise<Tunnel> {
   browserMode();
   if (!Number.isInteger(port) || port <= 0 || port > 65_535) throw new Error(`tunnel() needs a TCP port, not ${JSON.stringify(port)}.`);
+  if (options.root) {
+    if (root) throw new Error("A server is already mounted at the root of the tunnel. Close it first.");
+    const { origin } = await startShared(options);
+    if (root) throw new Error("A server is already mounted at the root of the tunnel. Close it first.");
+    const mine = { port };
+    root = mine;
+    return {
+      url: origin,
+      close: async () => {
+        if (root === mine) root = undefined;
+      },
+    };
+  }
   const name = id ?? String(nextId++);
   if (routes.has(name)) throw new Error(`A server is already mounted at ${PREFIX}${name}.`);
   const { origin } = await startShared(options);
@@ -277,5 +298,6 @@ export async function closeTunnels(): Promise<void> {
   const running = shared;
   shared = undefined;
   routes.clear();
+  root = undefined;
   await (await running?.catch(() => undefined))?.stop();
 }
