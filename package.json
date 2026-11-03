@@ -45,13 +45,13 @@
     "e2e:ichabod": "pnpm build && node scripts/e2e-ichabod.mjs"
   },
   "devDependencies": {
-    "@types/node": "^24.19.1",
-    "oxlint": "^1.87.0",
+    "@types/node": "^26.6.6",
+    "oxlint": "^1.90.0",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.3"
+    "vitest": "^5.1.0"
   },
   "dependencies": {
-    "puppeteer-core": "^25.12.0"
+    "puppeteer-core": "^25.16.0"
   },
   "keywords": [
     "typescript",
